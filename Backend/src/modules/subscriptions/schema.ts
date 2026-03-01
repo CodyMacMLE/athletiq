@@ -1,0 +1,84 @@
+export const subscriptionsSchema = `#graphql
+  # ---- Enums ----
+
+  enum SubscriptionTier {
+    STARTER
+    GROWTH
+    PRO
+  }
+
+  enum SubscriptionStatus {
+    TRIALING
+    ACTIVE
+    PAST_DUE
+    CANCELED
+  }
+
+  enum BillingPeriod {
+    MONTHLY
+    ANNUAL
+  }
+
+  # ---- Types ----
+
+  type TierPricing {
+    currency: String!
+    amountCents: Int!
+    formattedPrice: String!   # e.g. "CAD $80/mo"
+  }
+
+  type TierInfo {
+    key: SubscriptionTier!
+    name: String!
+    athleteLimit: Int!
+    advancedAnalytics: Boolean!
+    advancedReporting: Boolean!
+    aiAtRiskDetection: Boolean!
+    pricing: [TierPricing!]!
+  }
+
+  type OrgSubscription {
+    tier: SubscriptionTier!
+    status: SubscriptionStatus!
+    billingPeriod: BillingPeriod!
+    billingCurrency: String!
+    athleteLimit: Int!
+    athleteCount: Int!
+    currentPeriodEnd: String
+    trialEndsAt: String
+    stripeCustomerId: String
+    stripeSubscriptionId: String
+  }
+
+  type SubscriptionCheckoutResult {
+    checkoutUrl: String!
+  }
+
+  # ---- Queries ----
+  extend type Query {
+    # All available tiers with pricing for the given currency (default: usd)
+    subscriptionTiers(currency: String): [TierInfo!]!
+    # Current subscription state for an org (admin only)
+    orgSubscription(organizationId: ID!): OrgSubscription!
+  }
+
+  # ---- Mutations ----
+  extend type Mutation {
+    # Creates a Stripe Checkout Session for a new subscription; returns the hosted URL.
+    createOrgSubscription(
+      organizationId: ID!
+      tier: SubscriptionTier!
+      currency: String!
+      billingPeriod: BillingPeriod
+    ): SubscriptionCheckoutResult!
+
+    # Changes tier (upgrade or downgrade) on the existing subscription.
+    changeSubscriptionTier(
+      organizationId: ID!
+      newTier: SubscriptionTier!
+    ): OrgSubscription!
+
+    # Cancels the subscription at period end.
+    cancelSubscription(organizationId: ID!): OrgSubscription!
+  }
+`;

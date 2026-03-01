@@ -11,6 +11,7 @@ import { healthSchema } from "./modules/health/schema.js";
 import { guardianSchema } from "./modules/guardian/schema.js";
 import { mediaSchema } from "./modules/media/schema.js";
 import { paymentsSchema } from "./modules/payments/schema.js";
+import { subscriptionsSchema } from "./modules/subscriptions/schema.js";
 
 const baseSchema = `#graphql
   type Query
@@ -32,4 +33,5 @@ export const typeDefs = [
   guardianSchema,
   mediaSchema,
   paymentsSchema,
+  subscriptionsSchema,
 ];

@@ -92,6 +92,17 @@ model Organization {
   stripeAccountId      String?
   stripeAccountEnabled Boolean @default(false)
 
+  // AthletiQ Platform Subscription
+  subscriptionTier     SubscriptionTier   @default(STARTER)
+  subscriptionStatus   SubscriptionStatus @default(TRIALING)
+  billingPeriod        BillingPeriod      @default(MONTHLY)
+  billingCurrency      String             @default("cad")
+  athleteLimit         Int                @default(75)
+  stripeCustomerId     String?            // org as a paying customer of AthletiQ
+  stripeSubscriptionId String?
+  currentPeriodEnd     DateTime?
+  trialEndsAt          DateTime?
+
   // Relations
   teams                Team[]
   events               Event[]
@@ -867,6 +878,28 @@ model AthleteRecognition {
   @@unique([teamId, period])
   @@index([teamId])
   @@index([organizationId])
+}
+
+// ============================================
+// Subscriptions
+// ============================================
+
+enum SubscriptionTier {
+  STARTER
+  GROWTH
+  PRO
+}
+
+enum SubscriptionStatus {
+  TRIALING
+  ACTIVE
+  PAST_DUE
+  CANCELED
+}
+
+enum BillingPeriod {
+  MONTHLY
+  ANNUAL
 }
 
 // ============================================

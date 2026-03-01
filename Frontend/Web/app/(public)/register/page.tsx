@@ -13,6 +13,7 @@ import {
   Check,
   Zap,
   Trophy,
+  BarChart2,
   Loader2,
 } from "lucide-react";
 import {
@@ -22,6 +23,26 @@ import {
   cognitoResendSignUpCode,
 } from "@/lib/cognito";
 import { CREATE_USER, CREATE_ORGANIZATION } from "@/lib/graphql";
+import { useMutation as useApolloMutation } from "@apollo/client/react";
+import { gql } from "@apollo/client";
+
+const CREATE_ORG_SUBSCRIPTION = gql`
+  mutation CreateOrgSubscription(
+    $organizationId: ID!
+    $tier: SubscriptionTier!
+    $currency: String!
+    $billingPeriod: BillingPeriod
+  ) {
+    createOrgSubscription(
+      organizationId: $organizationId
+      tier: $tier
+      currency: $currency
+      billingPeriod: $billingPeriod
+    ) {
+      checkoutUrl
+    }
+  }
+`;
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
@@ -34,70 +55,84 @@ const gradientStyle = {
 
 // ─── Plans ────────────────────────────────────────────────────────────────────
 
+/**
+ * Detect billing currency from browser locale.
+ * "en-CA", "fr-CA", etc. → CAD.  Everything else → USD.
+ * Used client-side only; SSR will default to USD (no window).
+ */
+function detectCurrency(): "CAD" | "USD" {
+  if (typeof navigator === "undefined") return "USD";
+  const lang = navigator.language ?? "";
+  return lang.toLowerCase().endsWith("-ca") ? "CAD" : "USD";
+}
+
+const PRICES = {
+  STARTER: { CAD: "$80", USD: "$59" },
+  GROWTH:  { CAD: "$200", USD: "$149" },
+  PRO:     { CAD: "$450", USD: "$329" },
+} as const;
+
 const PLANS = [
   {
-    id: "starter",
+    id: "STARTER" as const,
     name: "Starter",
-    price: "Free",
-    period: "",
-    description: "Perfect for small teams just getting started.",
+    athleteLimit: 75,
+    description: "For clubs getting started with digital attendance.",
     Icon: Zap,
     iconColor: "text-blue-400",
     iconBg: "bg-blue-500/20",
     features: [
-      "Up to 25 athletes",
-      "1 team",
-      "Event scheduling",
-      "NFC check-ins",
+      "Up to 75 athletes",
+      "Unlimited teams",
+      "Event scheduling & NFC check-ins",
       "Basic attendance tracking",
+      "Guardian access & email reports",
       "Mobile app access",
     ],
-    ctaLabel: "Continue with Starter",
-    trialNote: null,
+    ctaLabel: "Start 14-Day Free Trial",
+    trialNote: "14-day free trial — card required. Cancel anytime.",
   },
   {
-    id: "pro",
-    name: "Pro",
-    price: "$29",
-    period: "/mo",
-    description: "For growing organizations managing multiple teams.",
-    Icon: Building2,
+    id: "GROWTH" as const,
+    name: "Growth",
+    athleteLimit: 200,
+    description: "For growing organizations needing deeper insights.",
+    Icon: BarChart2,
     iconColor: "text-purple-400",
     iconBg: "bg-purple-500/20",
     features: [
-      "Unlimited athletes",
-      "Unlimited teams",
-      "Advanced analytics & leaderboards",
-      "Guardian access & email reports",
-      "Payroll & coach hours tracking",
+      "Up to 200 athletes",
+      "Everything in Starter",
+      "Advanced analytics & trends",
+      "Season-over-season comparisons",
+      "Leaderboards & CSV exports",
       "Priority support",
     ],
-    ctaLabel: "Start Free Trial",
-    trialNote: "14-day free trial — no credit card required today. Billing begins after your trial ends.",
+    ctaLabel: "Start 14-Day Free Trial",
+    trialNote: "14-day free trial — card required. Cancel anytime.",
   },
   {
-    id: "elite",
-    name: "Elite",
-    price: "Custom",
-    period: "",
-    description: "For large clubs and multi-sport organizations.",
+    id: "PRO" as const,
+    name: "Pro",
+    athleteLimit: 500,
+    description: "For elite programs that need every edge.",
     Icon: Trophy,
     iconColor: "text-yellow-400",
     iconBg: "bg-yellow-500/20",
     features: [
-      "Everything in Pro",
-      "Multiple organizations",
-      "Custom branding",
+      "Up to 500 athletes",
+      "Everything in Growth",
+      "AI at-risk athlete detection",
+      "Advanced reporting suite",
+      "Custom roles & permissions",
       "Dedicated account manager",
-      "API access",
-      "SLA uptime guarantee",
     ],
-    ctaLabel: "Continue — Our Team Will Reach Out",
-    trialNote: "Our sales team will contact you to discuss pricing and custom setup after you register.",
+    ctaLabel: "Start 14-Day Free Trial",
+    trialNote: "14-day free trial — card required. Cancel anytime.",
   },
 ] as const;
 
-type PlanId = "starter" | "pro" | "elite";
+type PlanId = "STARTER" | "GROWTH" | "PRO";
 type AccountType = "user" | "org";
 
 // ─── Step labels ──────────────────────────────────────────────────────────────
@@ -178,6 +213,10 @@ export default function RegisterPage() {
   const [orgStep,  setOrgStep]  = useState(0);
   const [userStep, setUserStep] = useState(0);
 
+  // Currency detection (client-side only — default USD avoids hydration mismatch)
+  const [currency, setCurrency] = useState<"CAD" | "USD">("USD");
+  useState(() => { setCurrency(detectCurrency()); });
+
   // Form data
   const [form, setForm] = useState({
     firstName: "",
@@ -188,8 +227,9 @@ export default function RegisterPage() {
     confirmPassword: "",
   });
   const [orgName, setOrgName] = useState("");
-  const [selectedPlan, setSelectedPlan] = useState<PlanId>("starter");
+  const [selectedPlan, setSelectedPlan] = useState<PlanId>("STARTER");
   const [confirmationCode, setConfirmationCode] = useState("");
+  const [createdOrgId, setCreatedOrgId] = useState<string | null>(null);
 
   // UI state
   const [error,     setError]     = useState("");
@@ -197,8 +237,11 @@ export default function RegisterPage() {
   const [stepLabel, setStepLabel] = useState("");
   const [resending, setResending] = useState(false);
 
-  const [createUser]         = useMutation<any>(CREATE_USER);
-  const [createOrganization] = useMutation<any>(CREATE_ORGANIZATION);
+  const [createUser]            = useMutation<any>(CREATE_USER);
+  const [createOrganization]    = useMutation<any>(CREATE_ORGANIZATION);
+  const [createOrgSubscription] = useApolloMutation<{
+    createOrgSubscription: { checkoutUrl: string };
+  }>(CREATE_ORG_SUBSCRIPTION);
 
   // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -304,7 +347,28 @@ export default function RegisterPage() {
 
       if (accountType === "org") {
         setStepLabel("Creating organization...");
-        await createOrganization({ variables: { input: { name: orgName.trim() } } });
+        const orgResult = await createOrganization({
+          variables: { input: { name: orgName.trim() } },
+        });
+        const orgId = orgResult.data?.createOrganization?.id as string | undefined;
+
+        if (orgId) {
+          setStepLabel("Redirecting to billing...");
+          const subResult = await createOrgSubscription({
+            variables: {
+              organizationId: orgId,
+              tier: selectedPlan,
+              currency: currency.toLowerCase(),
+              billingPeriod: "MONTHLY",
+            },
+          });
+          const checkoutUrl = subResult.data?.createOrgSubscription?.checkoutUrl;
+          if (checkoutUrl) {
+            window.location.href = checkoutUrl;
+            return;
+          }
+        }
+        // Fallback if Stripe not configured in dev
         router.push("/dashboard");
       } else {
         router.push("/account");
@@ -594,15 +658,35 @@ export default function RegisterPage() {
           <BackBtn onClick={() => { setOrgStep(2); setError(""); }} />
           <ProgressBar labels={ORG_STEP_LABELS} activeIndex={2} />
 
-          <div className="text-center mb-6">
+          <div className="text-center mb-5">
             <h1 className="text-xl font-bold text-white">Choose Your Plan</h1>
-            <p className="text-white/45 text-sm mt-1">Start free, upgrade any time.</p>
+            <p className="text-white/45 text-sm mt-1">14-day free trial on all plans. Cancel anytime.</p>
+          </div>
+
+          {/* Currency toggle */}
+          <div className="flex justify-center mb-6">
+            <div className="inline-flex rounded-lg border border-white/10 overflow-hidden text-sm">
+              {(["CAD", "USD"] as const).map((cur) => (
+                <button
+                  key={cur}
+                  onClick={() => setCurrency(cur)}
+                  className={`px-4 py-1.5 font-medium transition-colors ${
+                    currency === cur
+                      ? "bg-[#6c5ce7] text-white"
+                      : "bg-white/5 text-white/45 hover:text-white/70"
+                  }`}
+                >
+                  {cur}
+                </button>
+              ))}
+            </div>
           </div>
 
           <div className="grid grid-cols-3 gap-4 mb-5">
             {PLANS.map((plan) => {
               const { Icon } = plan;
               const isSelected = selectedPlan === plan.id;
+              const price = PRICES[plan.id][currency];
               return (
                 <button
                   key={plan.id}
@@ -624,10 +708,11 @@ export default function RegisterPage() {
                     )}
                   </div>
                   <p className="text-white font-semibold text-sm">{plan.name}</p>
-                  <div className="flex items-baseline gap-0.5 mt-0.5 mb-2">
-                    <span className="text-[#a78bfa] font-bold text-xl">{plan.price}</span>
-                    {plan.period && <span className="text-white/40 text-xs">{plan.period}</span>}
+                  <div className="flex items-baseline gap-0.5 mt-0.5 mb-0.5">
+                    <span className="text-[#a78bfa] font-bold text-xl">{price}</span>
+                    <span className="text-white/40 text-xs">/mo {currency}</span>
                   </div>
+                  <p className="text-white/35 text-[11px] mb-3">Up to {plan.athleteLimit} athletes</p>
                   <p className="text-white/40 text-xs mb-3 leading-relaxed">{plan.description}</p>
                   <ul className="space-y-1.5">
                     {plan.features.map((f) => (
@@ -642,15 +727,9 @@ export default function RegisterPage() {
             })}
           </div>
 
-          {activePlan.trialNote && (
-            <div className={`mb-4 px-4 py-3 rounded-xl text-sm text-center ${
-              selectedPlan === "pro"
-                ? "bg-purple-500/10 border border-purple-500/20 text-purple-300"
-                : "bg-yellow-500/10 border border-yellow-500/20 text-yellow-300"
-            }`}>
-              {activePlan.trialNote}
-            </div>
-          )}
+          <div className="mb-4 px-4 py-3 rounded-xl text-sm text-center bg-[#6c5ce7]/10 border border-[#6c5ce7]/20 text-[#a78bfa]">
+            {activePlan.trialNote}
+          </div>
 
           <button
             onClick={() => { setOrgStep(4); setError(""); }}
@@ -659,6 +738,10 @@ export default function RegisterPage() {
             <span>{activePlan.ctaLabel}</span>
             <ArrowRight className="w-4 h-4" />
           </button>
+
+          <p className="mt-3 text-center text-xs text-white/30">
+            After verifying your email, you&apos;ll be redirected to Stripe to set up billing.
+          </p>
         </div>
       </div>
     );

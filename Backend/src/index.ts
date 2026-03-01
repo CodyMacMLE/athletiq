@@ -21,6 +21,7 @@ import Stripe from "stripe";
 import { userRateLimiter } from "./utils/rateLimit.js";
 import { auditLog } from "./utils/audit.js";
 import { logger, captureError } from "./utils/logger.js";
+import { handleSubscriptionWebhook } from "./modules/subscriptions/resolvers.js";
 
 interface Context {
   userId?: string;
@@ -235,6 +236,15 @@ async function main() {
           captureError(err, { event: event.type, accountId: account.id });
         }
       }
+    }
+
+    // Subscription lifecycle events (checkout, renewal, failure, cancellation)
+    const subscriptionHandled = await handleSubscriptionWebhook(event).catch((err) => {
+      captureError(err, { event: event.type });
+      return false;
+    });
+    if (!subscriptionHandled && event.type !== "payment_intent.succeeded" && event.type !== "account.updated") {
+      logger.debug({ eventType: event.type }, "Unhandled Stripe event");
     }
 
     res.json({ received: true });

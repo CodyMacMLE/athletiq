@@ -4,6 +4,7 @@ import { requireAuth, requireOrgAdmin } from "../../utils/permissions.js";
 import { auditLog } from "../../utils/audit.js";
 import { toISO, getSeasonDateRange, generateSeasonDisplayString } from "../../utils/time.js";
 import { filterEventsByMembership, MembershipPeriod } from "../../utils/membershipPeriods.js";
+import { getAthleteLimit } from "../../utils/subscriptions.js";
 import { computeEventDuration } from "../../utils/time.js";
 import type { Loaders } from "../../utils/dataLoaders.js";
 
@@ -158,6 +159,31 @@ export const teamResolvers = {
         const existing = await tx.teamMember.findUnique({
           where: { userId_teamId: { userId: input.userId, teamId: input.teamId } },
         });
+
+        // Enforce athlete limit when adding a new ATHLETE member (not re-adding existing).
+        if (!existing && (!input.role || input.role === "MEMBER")) {
+          const team = await tx.team.findUnique({
+            where: { id: input.teamId },
+            select: { organizationId: true },
+          });
+          if (team) {
+            const org = await tx.organization.findUnique({
+              where: { id: team.organizationId },
+              select: { athleteLimit: true, subscriptionTier: true },
+            });
+            if (org) {
+              const currentCount = await tx.organizationMember.count({
+                where: { organizationId: team.organizationId, role: "ATHLETE" },
+              });
+              const limit = org.athleteLimit;
+              if (currentCount >= limit) {
+                throw new Error(
+                  `Athlete limit reached (${limit}). Upgrade your plan to add more athletes.`
+                );
+              }
+            }
+          }
+        }
 
         const member = await tx.teamMember.upsert({
           where: { userId_teamId: { userId: input.userId, teamId: input.teamId } },

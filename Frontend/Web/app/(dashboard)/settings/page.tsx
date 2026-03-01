@@ -2,11 +2,49 @@
 
 import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@apollo/client/react";
+import { gql } from "@apollo/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { GET_ORG_SEASONS, CREATE_ORG_SEASON, UPDATE_ORG_SEASON, DELETE_ORG_SEASON, GET_ORGANIZATION, UPDATE_ORGANIZATION_SETTINGS, GET_ORGANIZATION_VENUES, CREATE_VENUE, UPDATE_VENUE, DELETE_VENUE, GET_CUSTOM_ROLES } from "@/lib/graphql";
 import { GET_STRIPE_CONNECT_STATUS } from "@/lib/graphql/queries";
 import { UPDATE_PAYROLL_CONFIG, CREATE_CUSTOM_ROLE, UPDATE_CUSTOM_ROLE, DELETE_CUSTOM_ROLE, CREATE_STRIPE_CONNECT_LINK, DISCONNECT_STRIPE_ACCOUNT } from "@/lib/graphql/mutations";
-import { HelpCircle, Calendar, Plus, Edit2, Trash2, X, Check, Shield, Heart, Building2, Bell, DollarSign, Percent, Users, CreditCard, ExternalLink, AlertCircle, Loader2 } from "lucide-react";
+import { HelpCircle, Calendar, Plus, Edit2, Trash2, X, Check, Shield, Heart, Building2, Bell, DollarSign, Percent, Users, CreditCard, ExternalLink, AlertCircle, Loader2, ArrowUpRight, Zap, BarChart2, Trophy } from "lucide-react";
+
+const GET_ORG_SUBSCRIPTION = gql`
+  query OrgSubscription($organizationId: ID!) {
+    orgSubscription(organizationId: $organizationId) {
+      tier
+      status
+      billingPeriod
+      billingCurrency
+      athleteLimit
+      athleteCount
+      currentPeriodEnd
+      trialEndsAt
+      stripeSubscriptionId
+    }
+  }
+`;
+
+const CHANGE_SUBSCRIPTION_TIER = gql`
+  mutation ChangeSubscriptionTier($organizationId: ID!, $newTier: SubscriptionTier!) {
+    changeSubscriptionTier(organizationId: $organizationId, newTier: $newTier) {
+      tier
+      status
+      athleteLimit
+      currentPeriodEnd
+    }
+  }
+`;
+
+const CANCEL_SUBSCRIPTION = gql`
+  mutation CancelSubscription($organizationId: ID!) {
+    cancelSubscription(organizationId: $organizationId) {
+      tier
+      status
+      currentPeriodEnd
+    }
+  }
+`;
 
 const MONTHS = [
   "January", "February", "March", "April", "May", "June",
@@ -166,6 +204,14 @@ export default function SettingsPage() {
   const connectStatus = connectData?.stripeConnectStatus;
   const [createConnectLink] = useMutation<any>(CREATE_STRIPE_CONNECT_LINK);
   const [disconnectStripe] = useMutation<any>(DISCONNECT_STRIPE_ACCOUNT);
+
+  const { data: subscriptionData, refetch: refetchSubscription } = useQuery<any>(GET_ORG_SUBSCRIPTION, {
+    variables: { organizationId: selectedOrganizationId },
+    skip: !selectedOrganizationId || !canManageOrg,
+  });
+  const sub = subscriptionData?.orgSubscription;
+  const [changeSubscriptionTier, { loading: tierChanging }] = useMutation<any>(CHANGE_SUBSCRIPTION_TIER);
+  const [cancelSubscription, { loading: canceling }] = useMutation<any>(CANCEL_SUBSCRIPTION);
 
   const resetRoleForm = () => {
     setRoleForm({ name: "", description: "", ...defaultRolePerms });
@@ -1293,6 +1339,120 @@ export default function SettingsPage() {
 
             {connectError && (
               <p className="text-sm text-red-400">{connectError}</p>
+            )}
+          </div>
+        </section>
+      )}
+
+      {/* Billing */}
+      {canManageOrg && sub && (
+        <section className="mb-8">
+          <div className="flex items-center gap-2 mb-4">
+            <CreditCard className="w-5 h-5 text-[#a78bfa]" />
+            <h2 className="text-lg font-semibold text-white">Billing &amp; Plan</h2>
+          </div>
+
+          <div className="bg-white/8 rounded-lg border border-white/8 p-4 space-y-5">
+            {/* Current plan summary */}
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <div className="flex items-center gap-2 mb-1">
+                  {sub.tier === "STARTER" && <Zap className="w-4 h-4 text-blue-400" />}
+                  {sub.tier === "GROWTH"  && <BarChart2 className="w-4 h-4 text-purple-400" />}
+                  {sub.tier === "PRO"     && <Trophy className="w-4 h-4 text-yellow-400" />}
+                  <span className="text-white font-semibold">{sub.tier.charAt(0) + sub.tier.slice(1).toLowerCase()} Plan</span>
+                  <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+                    sub.status === "ACTIVE"   ? "bg-green-500/20 text-green-400" :
+                    sub.status === "TRIALING" ? "bg-blue-500/20 text-blue-400" :
+                    sub.status === "PAST_DUE" ? "bg-red-500/20 text-red-400" :
+                                                "bg-white/10 text-white/45"
+                  }`}>
+                    {sub.status === "TRIALING" ? "Trial" :
+                     sub.status === "ACTIVE"   ? "Active" :
+                     sub.status === "PAST_DUE" ? "Past Due" : "Canceled"}
+                  </span>
+                </div>
+                <p className="text-white/45 text-sm">
+                  {sub.athleteCount} / {sub.athleteLimit} athletes
+                  {sub.trialEndsAt && (
+                    <> &mdash; Trial ends {new Date(sub.trialEndsAt).toLocaleDateString()}</>
+                  )}
+                  {sub.currentPeriodEnd && sub.status === "ACTIVE" && (
+                    <> &mdash; Renews {new Date(sub.currentPeriodEnd).toLocaleDateString()}</>
+                  )}
+                </p>
+              </div>
+              {sub.billingCurrency && (
+                <span className="text-xs text-white/30 shrink-0">
+                  Billed in {sub.billingCurrency.toUpperCase()}
+                </span>
+              )}
+            </div>
+
+            {/* Athlete usage bar */}
+            <div>
+              <div className="flex justify-between text-xs text-white/45 mb-1">
+                <span>Athletes</span>
+                <span>{sub.athleteCount} / {sub.athleteLimit}</span>
+              </div>
+              <div className="h-1.5 bg-white/10 rounded-full overflow-hidden">
+                <div
+                  className={`h-full rounded-full transition-all ${
+                    sub.athleteCount / sub.athleteLimit >= 0.9 ? "bg-red-400" :
+                    sub.athleteCount / sub.athleteLimit >= 0.7 ? "bg-yellow-400" : "bg-[#6c5ce7]"
+                  }`}
+                  style={{ width: `${Math.min(100, (sub.athleteCount / sub.athleteLimit) * 100)}%` }}
+                />
+              </div>
+            </div>
+
+            {/* Upgrade / downgrade */}
+            {sub.status !== "CANCELED" && (
+              <div>
+                <p className="text-xs text-white/45 mb-2">Change plan</p>
+                <div className="flex gap-2 flex-wrap">
+                  {(["STARTER", "GROWTH", "PRO"] as const).filter(t => t !== sub.tier).map((tier) => (
+                    <button
+                      key={tier}
+                      disabled={tierChanging}
+                      onClick={async () => {
+                        if (!confirm(`Switch to ${tier.charAt(0) + tier.slice(1).toLowerCase()} plan? Changes take effect immediately for upgrades.`)) return;
+                        try {
+                          await changeSubscriptionTier({ variables: { organizationId: selectedOrganizationId, newTier: tier } });
+                          refetchSubscription();
+                        } catch (err: any) {
+                          alert(err.message || "Failed to change plan.");
+                        }
+                      }}
+                      className="flex items-center gap-1.5 px-3 py-1.5 bg-white/5 border border-white/10 rounded-lg text-sm text-white/70 hover:border-[#6c5ce7]/60 hover:text-white transition-all disabled:opacity-50"
+                    >
+                      {tierChanging ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ArrowUpRight className="w-3.5 h-3.5" />}
+                      Switch to {tier.charAt(0) + tier.slice(1).toLowerCase()}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Cancel */}
+            {(sub.status === "ACTIVE" || sub.status === "TRIALING") && (
+              <div className="pt-2 border-t border-white/8">
+                <button
+                  disabled={canceling}
+                  onClick={async () => {
+                    if (!confirm("Cancel your subscription? You keep access until the end of the current period.")) return;
+                    try {
+                      await cancelSubscription({ variables: { organizationId: selectedOrganizationId } });
+                      refetchSubscription();
+                    } catch (err: any) {
+                      alert(err.message || "Failed to cancel.");
+                    }
+                  }}
+                  className="text-sm text-red-400/70 hover:text-red-400 transition-colors disabled:opacity-50"
+                >
+                  {canceling ? "Canceling…" : "Cancel subscription"}
+                </button>
+              </div>
             )}
           </div>
         </section>
