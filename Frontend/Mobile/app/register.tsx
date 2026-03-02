@@ -38,6 +38,7 @@ export default function Register() {
   const [needsConfirmation, setNeedsConfirmation] = useState(false);
   const [confirmationCode, setConfirmationCode] = useState("");
   const [resending, setResending] = useState(false);
+  const [codeResentNotice, setCodeResentNotice] = useState(false);
 
   const lastNameRef = useRef<TextInput>(null);
   const emailRef = useRef<TextInput>(null);
@@ -71,7 +72,16 @@ export default function Register() {
       if (!signUpResult.success) {
         const err = signUpResult.error || "";
         if (err.includes("already exists") || err.includes("UsernameExistsException")) {
-          setError("An account with this email already exists. Please sign in instead.");
+          // Try resending — if it succeeds the account is unconfirmed and we can resume.
+          setStep("Checking account status...");
+          const resendResult = await cognitoResendSignUpCode(email.trim());
+          if (resendResult.success) {
+            setCodeResentNotice(true);
+            setConfirmationCode("");
+            setNeedsConfirmation(true);
+          } else {
+            setError("An account with this email already exists. Please sign in instead.");
+          }
           setLoading(false);
           return;
         }
@@ -192,6 +202,16 @@ export default function Register() {
             <Text style={styles.subheading}>
               We sent a confirmation code to {email}
             </Text>
+
+            {/* Resent notice */}
+            {codeResentNotice ? (
+              <View style={styles.noticeBox}>
+                <Feather name="info" size={16} color="#818cf8" />
+                <Text style={styles.noticeText}>
+                  A new verification code has been sent to your email.
+                </Text>
+              </View>
+            ) : null}
 
             {/* Error */}
             {error ? (
@@ -494,6 +514,22 @@ const styles = StyleSheet.create({
   },
   errorText: {
     color: "#e74c3c",
+    fontSize: 14,
+    flex: 1,
+  },
+  noticeBox: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: "rgba(99,102,241,0.15)",
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: "rgba(99,102,241,0.3)",
+  },
+  noticeText: {
+    color: "#818cf8",
     fontSize: 14,
     flex: 1,
   },
