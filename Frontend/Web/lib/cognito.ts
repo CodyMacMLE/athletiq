@@ -35,6 +35,7 @@ export type SignInResult = {
   success: boolean;
   error?: string;
   requiresNewPassword?: boolean;
+  requiresConfirmation?: boolean;
 };
 
 export async function cognitoSignUp(
@@ -92,10 +93,12 @@ export async function cognitoSignIn(
 
     // Handle new password required challenge
     if (result.nextStep?.signInStep === "CONFIRM_SIGN_IN_WITH_NEW_PASSWORD_REQUIRED") {
-      return {
-        success: false,
-        requiresNewPassword: true,
-      };
+      return { success: false, requiresNewPassword: true };
+    }
+
+    // Account exists but email not yet confirmed
+    if (result.nextStep?.signInStep === "CONFIRM_SIGN_UP") {
+      return { success: false, requiresConfirmation: true };
     }
 
     // Handle other challenges

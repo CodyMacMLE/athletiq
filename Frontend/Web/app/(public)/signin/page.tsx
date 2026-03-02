@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import Image from "next/image";
 import Link from "next/link";
 import { useAuth } from "@/contexts/AuthContext";
-import { cognitoResetPassword, cognitoConfirmResetPassword } from "@/lib/cognito";
+import { cognitoResetPassword, cognitoConfirmResetPassword, cognitoResendSignUpCode, cognitoConfirmSignUp } from "@/lib/cognito";
 import { Loader2, Eye, EyeOff } from "lucide-react";
 
 const inputClass =
@@ -20,7 +20,7 @@ export default function SignInPage() {
   const router = useRouter();
   const { login, confirmNewPassword } = useAuth();
 
-  const [view, setView] = useState<"login" | "forgot" | "reset">("login");
+  const [view, setView] = useState<"login" | "forgot" | "reset" | "verify">("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -30,6 +30,9 @@ export default function SignInPage() {
   const [newPassword, setNewPassword] = useState("");
   const [confirmPw, setConfirmPw] = useState("");
   const [resetCode, setResetCode] = useState("");
+  const [verifyCode, setVerifyCode] = useState("");
+  const [verifyLoading, setVerifyLoading] = useState(false);
+  const [resending, setResending] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [showNewPassword, setShowNewPassword] = useState(false);
   const [showConfirmPw, setShowConfirmPw] = useState(false);
@@ -41,6 +44,10 @@ export default function SignInPage() {
       const result = await login(email, password);
       if (result.requiresNewPassword) {
         setRequiresNewPassword(true);
+      } else if (result.requiresConfirmation) {
+        // Resend code then drop them into the verify view
+        await cognitoResendSignUpCode(email);
+        setView("verify");
       } else if (!result.success) {
         setError(result.error || "Login failed");
       } else {
@@ -160,11 +167,13 @@ export default function SignInPage() {
             {view === "login" && "Welcome back"}
             {view === "forgot" && "Reset your password"}
             {view === "reset" && "Enter reset code"}
+            {view === "verify" && "Verify your email"}
           </h1>
           <p className="text-white/45 text-sm mt-1">
             {view === "login" && "Sign in to your Athletiq account"}
             {view === "forgot" && "We'll send a code to your email"}
             {view === "reset" && `Code sent to ${email}`}
+            {view === "verify" && "Complete your account setup"}
           </p>
         </div>
 
@@ -206,6 +215,72 @@ export default function SignInPage() {
                 <Link href="/" className="text-[#a78bfa] hover:text-[#c4b5fd] transition-colors">Home</Link>
               </p>
             </form>
+          )}
+
+          {view === "verify" && (
+            <div className="space-y-4">
+              <p className="text-sm text-white/55 -mt-1 mb-2">
+                A confirmation code was sent to <span className="text-white">{email}</span>. Enter it to finish activating your account.
+              </p>
+              <div>
+                <label className={labelClass}>Confirmation Code</label>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  value={verifyCode}
+                  onChange={(e) => { setVerifyCode(e.target.value); setError(""); }}
+                  className={`${inputClass} tracking-widest text-center text-lg`}
+                  placeholder="123456"
+                  maxLength={6}
+                  autoFocus
+                />
+              </div>
+              {error && <div className="px-4 py-3 bg-red-500/10 border border-red-500/30 text-red-400 rounded-lg text-sm">{error}</div>}
+              <button
+                type="button"
+                disabled={verifyLoading || !verifyCode.trim()}
+                onClick={async () => {
+                  setError("");
+                  setVerifyLoading(true);
+                  const result = await cognitoConfirmSignUp(email, verifyCode.trim());
+                  if (!result.success && !result.error?.includes("Current status is CONFIRMED")) {
+                    setError(result.error || "Invalid code.");
+                    setVerifyLoading(false);
+                    return;
+                  }
+                  // Confirmed — now sign in
+                  const signInResult = await login(email, password);
+                  if (!signInResult.success) {
+                    setError(signInResult.error || "Verified but sign-in failed. Try signing in again.");
+                    setView("login");
+                  } else {
+                    router.replace("/dashboard");
+                  }
+                  setVerifyLoading(false);
+                }}
+                className="w-full py-3 bg-[#6c5ce7] hover:bg-[#5a4dd4] text-white text-sm font-semibold rounded-lg transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                {verifyLoading ? <><Loader2 className="w-4 h-4 animate-spin" /> Verifying…</> : "Verify & Sign In"}
+              </button>
+              <div className="flex items-center justify-between text-sm">
+                <button
+                  type="button"
+                  disabled={resending}
+                  onClick={async () => {
+                    setResending(true);
+                    await cognitoResendSignUpCode(email);
+                    setResending(false);
+                  }}
+                  className="text-[#a78bfa] hover:text-[#c4b5fd] transition-colors disabled:opacity-50"
+                >
+                  {resending ? "Sending…" : "Resend code"}
+                </button>
+                <button type="button" onClick={() => { setView("login"); setVerifyCode(""); setError(""); }} className="text-white/40 hover:text-white transition-colors">
+                  Back to sign in
+                </button>
+              </div>
+            </div>
           )}
 
           {view === "forgot" && (
