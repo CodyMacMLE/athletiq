@@ -522,6 +522,13 @@ export default function AccountPage() {
     }
   }, [medicalInfo]);
 
+  // Detect currency from browser locale on mount
+  useEffect(() => {
+    if (typeof navigator !== "undefined") {
+      setNewOrgCurrency(navigator.language?.toLowerCase().endsWith("-ca") ? "CAD" : "USD");
+    }
+  }, []);
+
   // All hooks declared above — safe to return early now (Rules of Hooks satisfied)
   if (isLoading || !isAuthenticated) {
     return (
@@ -618,13 +625,6 @@ export default function AccountPage() {
   };
 
   // ── Create org ────────────────────────────────────────────────────────────
-  // Detect currency from browser locale on mount
-  useEffect(() => {
-    if (typeof navigator !== "undefined") {
-      setNewOrgCurrency(navigator.language?.toLowerCase().endsWith("-ca") ? "CAD" : "USD");
-    }
-  }, []);
-
   const handleCreateOrg = async (e: React.FormEvent) => {
     e.preventDefault();
     setCreateOrgError("");
