@@ -17,10 +17,6 @@
       ],
       "secrets": [
         {
-          "name": "APP_URL",
-          "valueFrom": "/athletiq/APP_URL"
-        },
-        {
           "name": "DATABASE_URL",
           "valueFrom": "arn:aws:ssm:us-east-2:555434054017:parameter/athletiq/DATABASE_URL"
         },
@@ -50,27 +46,27 @@
         },
         {
           "name": "STRIPE_PRICE_STARTER_CAD",
-          "valueFrom": "/athletiq/STRIPE_PRICE_STARTER_CAD"
+          "valueFrom": "arn:aws:ssm:us-east-2:555434054017:parameter/athletiq/STRIPE_PRICE_STARTER_CAD"
         },
         {
           "name": "STRIPE_PRICE_STARTER_USD",
-          "valueFrom": "/athletiq/STRIPE_PRICE_STARTER_USD"
+          "valueFrom": "arn:aws:ssm:us-east-2:555434054017:parameter/athletiq/STRIPE_PRICE_STARTER_USD"
         },
         {
           "name": "STRIPE_PRICE_GROWTH_CAD",
-          "valueFrom": "/athletiq/STRIPE_PRICE_GROWTH_CAD"
+          "valueFrom": "arn:aws:ssm:us-east-2:555434054017:parameter/athletiq/STRIPE_PRICE_GROWTH_CAD"
         },
         {
           "name": "STRIPE_PRICE_GROWTH_USD",
-          "valueFrom": "/athletiq/STRIPE_PRICE_GROWTH_USD"
+          "valueFrom": "arn:aws:ssm:us-east-2:555434054017:parameter/athletiq/STRIPE_PRICE_GROWTH_USD"
         },
         {
           "name": "STRIPE_PRICE_PRO_CAD",
-          "valueFrom": "/athletiq/STRIPE_PRICE_PRO_CAD"
+          "valueFrom": "arn:aws:ssm:us-east-2:555434054017:parameter/athletiq/STRIPE_PRICE_PRO_CAD"
         },
         {
           "name": "STRIPE_PRICE_PRO_USD",
-          "valueFrom": "/athletiq/STRIPE_PRICE_PRO_USD"
+          "valueFrom": "arn:aws:ssm:us-east-2:555434054017:parameter/athletiq/STRIPE_PRICE_PRO_USD"
         }
       ],
       "environment": [
