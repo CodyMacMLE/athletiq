@@ -17,6 +17,10 @@
       ],
       "secrets": [
         {
+          "name": "APP_URL",
+          "valueFrom": "/athletiq/APP_URL"
+        },
+        {
           "name": "DATABASE_URL",
           "valueFrom": "arn:aws:ssm:us-east-2:555434054017:parameter/athletiq/DATABASE_URL"
         },
