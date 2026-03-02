@@ -6,7 +6,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { useAuth } from "@/contexts/AuthContext";
 import { cognitoResetPassword, cognitoConfirmResetPassword } from "@/lib/cognito";
-import { Loader2 } from "lucide-react";
+import { Loader2, Eye, EyeOff } from "lucide-react";
 
 const inputClass =
   "w-full px-4 py-3 bg-white/8 border border-white/10 rounded-lg text-white text-sm placeholder-white/30 focus:outline-none focus:ring-2 focus:ring-[#6c5ce7] focus:border-transparent";
@@ -30,6 +30,9 @@ export default function SignInPage() {
   const [newPassword, setNewPassword] = useState("");
   const [confirmPw, setConfirmPw] = useState("");
   const [resetCode, setResetCode] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showConfirmPw, setShowConfirmPw] = useState(false);
 
   const doLogin = async () => {
     setError("");
@@ -116,11 +119,21 @@ export default function SignInPage() {
             <form onSubmit={handleNewPasswordSubmit} className="space-y-4">
               <div>
                 <label className={labelClass}>New Password</label>
-                <input type="password" required value={newPassword} onChange={(e) => setNewPassword(e.target.value)} className={inputClass} placeholder="Min. 8 characters" minLength={8} />
+                <div className="relative">
+                  <input type={showNewPassword ? "text" : "password"} required value={newPassword} onChange={(e) => setNewPassword(e.target.value)} className={`${inputClass} pr-11`} placeholder="Min. 8 characters" minLength={8} />
+                  <button type="button" onClick={() => setShowNewPassword((v) => !v)} className="absolute right-3 top-1/2 -translate-y-1/2 text-white/35 hover:text-white/70 transition-colors">
+                    {showNewPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
               </div>
               <div>
                 <label className={labelClass}>Confirm Password</label>
-                <input type="password" required value={confirmPw} onChange={(e) => setConfirmPw(e.target.value)} className={inputClass} placeholder="Re-enter password" minLength={8} />
+                <div className="relative">
+                  <input type={showConfirmPw ? "text" : "password"} required value={confirmPw} onChange={(e) => setConfirmPw(e.target.value)} className={`${inputClass} pr-11`} placeholder="Re-enter password" minLength={8} />
+                  <button type="button" onClick={() => setShowConfirmPw((v) => !v)} className="absolute right-3 top-1/2 -translate-y-1/2 text-white/35 hover:text-white/70 transition-colors">
+                    {showConfirmPw ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
               </div>
               <button type="submit" disabled={loading} className="w-full py-3 bg-[#6c5ce7] hover:bg-[#5a4dd4] text-white text-sm font-semibold rounded-lg transition-colors disabled:opacity-50 flex items-center justify-center gap-2">
                 {loading ? <><Loader2 className="w-4 h-4 animate-spin" /> Setting password…</> : "Set Password"}
@@ -171,7 +184,12 @@ export default function SignInPage() {
               </div>
               <div>
                 <label className={labelClass}>Password</label>
-                <input type="password" required value={password} onChange={(e) => setPassword(e.target.value)} className={inputClass} placeholder="Enter your password" />
+                <div className="relative">
+                  <input type={showPassword ? "text" : "password"} required value={password} onChange={(e) => setPassword(e.target.value)} className={`${inputClass} pr-11`} placeholder="Enter your password" />
+                  <button type="button" onClick={() => setShowPassword((v) => !v)} className="absolute right-3 top-1/2 -translate-y-1/2 text-white/35 hover:text-white/70 transition-colors">
+                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
               </div>
               <div className="text-right">
                 <button type="button" onClick={() => { setView("forgot"); setError(""); setSuccessMessage(""); }} className="text-xs text-[#a78bfa] hover:text-[#c4b5fd] transition-colors">
@@ -213,11 +231,21 @@ export default function SignInPage() {
               </div>
               <div>
                 <label className={labelClass}>New Password</label>
-                <input type="password" required value={newPassword} onChange={(e) => setNewPassword(e.target.value)} className={inputClass} placeholder="Min. 8 characters" minLength={8} />
+                <div className="relative">
+                  <input type={showNewPassword ? "text" : "password"} required value={newPassword} onChange={(e) => setNewPassword(e.target.value)} className={`${inputClass} pr-11`} placeholder="Min. 8 characters" minLength={8} />
+                  <button type="button" onClick={() => setShowNewPassword((v) => !v)} className="absolute right-3 top-1/2 -translate-y-1/2 text-white/35 hover:text-white/70 transition-colors">
+                    {showNewPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
               </div>
               <div>
                 <label className={labelClass}>Confirm Password</label>
-                <input type="password" required value={confirmPw} onChange={(e) => setConfirmPw(e.target.value)} className={inputClass} placeholder="Re-enter password" minLength={8} />
+                <div className="relative">
+                  <input type={showConfirmPw ? "text" : "password"} required value={confirmPw} onChange={(e) => setConfirmPw(e.target.value)} className={`${inputClass} pr-11`} placeholder="Re-enter password" minLength={8} />
+                  <button type="button" onClick={() => setShowConfirmPw((v) => !v)} className="absolute right-3 top-1/2 -translate-y-1/2 text-white/35 hover:text-white/70 transition-colors">
+                    {showConfirmPw ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
               </div>
               <button type="submit" disabled={loading} className="w-full py-3 bg-[#6c5ce7] hover:bg-[#5a4dd4] text-white text-sm font-semibold rounded-lg transition-colors disabled:opacity-50 flex items-center justify-center gap-2">
                 {loading ? <><Loader2 className="w-4 h-4 animate-spin" /> Resetting…</> : "Reset Password"}

@@ -288,7 +288,25 @@ export default function RegisterPage() {
       if (!result.success) {
         const err = result.error || "";
         if (err.includes("already exists") || err.includes("UsernameExistsException")) {
-          setError("An account with this email already exists. Please sign in instead.");
+          // The Cognito account may be unconfirmed (user abandoned mid-flow).
+          // Try resending the code — if it succeeds, resume at the verify step.
+          setStepLabel("Checking account status...");
+          const resendResult = await cognitoResendSignUpCode(email.trim());
+          if (resendResult.success) {
+            // Unconfirmed account — resume the flow and surface a notice.
+            setError("");
+            setConfirmationCode("");
+            if (accountType === "org") {
+              // Still need org name + plan before verify; start at org details step
+              setOrgStep(2);
+            } else {
+              setUserStep(2);
+            }
+            setStepLabel("A new verification code has been sent to your email.");
+          } else {
+            // Account is already confirmed — they should sign in
+            setError("An account with this email already exists. Please sign in instead.");
+          }
         } else {
           setError(err || "Failed to create account.");
         }
@@ -776,6 +794,12 @@ export default function RegisterPage() {
               We sent a 6-digit code to{" "}
               <span className="text-white font-medium">{form.email}</span>. Enter it below to continue.
             </p>
+
+            {stepLabel.includes("verification code") && (
+              <div className="mb-4 px-4 py-3 bg-blue-500/10 border border-blue-500/20 text-blue-300 rounded-lg text-sm">
+                {stepLabel}
+              </div>
+            )}
 
             <form onSubmit={handleConfirm} className="space-y-4">
               <div>
