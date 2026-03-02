@@ -22,6 +22,56 @@ import {
   GET_USER_BADGES,
 } from "@/lib/graphql";
 import { gql } from "@apollo/client";
+
+const CREATE_ORG_SUBSCRIPTION = gql`
+  mutation CreateOrgSubscription(
+    $organizationId: ID!
+    $tier: SubscriptionTier!
+    $currency: String!
+    $billingPeriod: BillingPeriod
+  ) {
+    createOrgSubscription(
+      organizationId: $organizationId
+      tier: $tier
+      currency: $currency
+      billingPeriod: $billingPeriod
+    ) {
+      checkoutUrl
+    }
+  }
+`;
+
+const PLAN_OPTIONS = [
+  {
+    id: "STARTER" as const,
+    name: "Starter",
+    athletes: 75,
+    Icon: Zap,
+    iconColor: "text-blue-400",
+    iconBg: "bg-blue-500/20",
+    pricing: { CAD: "$80", USD: "$59" },
+  },
+  {
+    id: "GROWTH" as const,
+    name: "Growth",
+    athletes: 200,
+    Icon: BarChart2,
+    iconColor: "text-purple-400",
+    iconBg: "bg-purple-500/20",
+    pricing: { CAD: "$200", USD: "$149" },
+  },
+  {
+    id: "PRO" as const,
+    name: "Pro",
+    athletes: 500,
+    Icon: Trophy,
+    iconColor: "text-yellow-400",
+    iconBg: "bg-yellow-500/20",
+    pricing: { CAD: "$450", USD: "$329" },
+  },
+] as const;
+
+type PlanId = "STARTER" | "GROWTH" | "PRO";
 import {
   User,
   Building2,
@@ -55,6 +105,8 @@ import {
   Stethoscope,
   Trophy,
   Lock,
+  Zap,
+  BarChart2,
 } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
@@ -379,8 +431,10 @@ export default function AccountPage() {
   const [medSuccess, setMedSuccess]                     = useState("");
 
   // Create org modal
-  const [showCreateOrg, setShowCreateOrg] = useState(false);
-  const [newOrgName, setNewOrgName]       = useState("");
+  const [showCreateOrg, setShowCreateOrg]   = useState(false);
+  const [newOrgName, setNewOrgName]         = useState("");
+  const [newOrgPlan, setNewOrgPlan]         = useState<PlanId>("STARTER");
+  const [newOrgCurrency, setNewOrgCurrency] = useState<"CAD" | "USD">("USD");
   const [createOrgError, setCreateOrgError] = useState("");
 
   // Transfer ownership modal
@@ -403,6 +457,7 @@ export default function AccountPage() {
   const [generateUploadUrl]                        = useMutation<{ generateUploadUrl: { uploadUrl: string; publicUrl: string } }>(GENERATE_UPLOAD_URL);
   const [leaveOrg, { loading: leaving }]           = useMutation(LEAVE_ORGANIZATION);
   const [createOrganization, { loading: creatingOrg }] = useMutation(CREATE_ORGANIZATION);
+  const [createOrgSubscription] = useMutation<{ createOrgSubscription: { checkoutUrl: string } }>(CREATE_ORG_SUBSCRIPTION);
   const [transferOwnership, { loading: transferring }] = useMutation(TRANSFER_OWNERSHIP);
   const [createInvite, { loading: inviting }]      = useMutation(CREATE_INVITE);
   const [deleteMyAccount]                          = useMutation(DELETE_MY_ACCOUNT);
@@ -563,11 +618,37 @@ export default function AccountPage() {
   };
 
   // ── Create org ────────────────────────────────────────────────────────────
+  // Detect currency from browser locale on mount
+  useEffect(() => {
+    if (typeof navigator !== "undefined") {
+      setNewOrgCurrency(navigator.language?.toLowerCase().endsWith("-ca") ? "CAD" : "USD");
+    }
+  }, []);
+
   const handleCreateOrg = async (e: React.FormEvent) => {
     e.preventDefault();
     setCreateOrgError("");
     try {
-      await createOrganization({ variables: { input: { name: newOrgName } } });
+      const orgResult = await createOrganization({ variables: { input: { name: newOrgName } } });
+      const orgId = (orgResult.data as any)?.createOrganization?.id as string | undefined;
+
+      if (orgId) {
+        const subResult = await createOrgSubscription({
+          variables: {
+            organizationId: orgId,
+            tier: newOrgPlan,
+            currency: newOrgCurrency.toLowerCase(),
+            billingPeriod: "MONTHLY",
+          },
+        });
+        const checkoutUrl = subResult.data?.createOrgSubscription?.checkoutUrl;
+        if (checkoutUrl) {
+          window.location.href = checkoutUrl;
+          return;
+        }
+      }
+
+      // Fallback (Stripe not configured in dev)
       setShowCreateOrg(false);
       setNewOrgName("");
       await refetch();
@@ -1467,7 +1548,7 @@ export default function AccountPage() {
                 <X className="w-5 h-5" />
               </button>
             </div>
-            <p className="text-white/50 text-sm mb-4">Create a new organization. You will be the owner.</p>
+            <p className="text-white/50 text-sm mb-4">You will be the owner. A 14-day free trial is included on all plans.</p>
             <form onSubmit={handleCreateOrg} className="space-y-4">
               <div>
                 <label className={labelClass}>Organization Name</label>
@@ -1481,6 +1562,54 @@ export default function AccountPage() {
                   placeholder="e.g. Westside Track Club"
                 />
               </div>
+
+              {/* Currency toggle */}
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-white/45">Currency</span>
+                <div className="inline-flex rounded-lg border border-white/10 overflow-hidden text-xs">
+                  {(["CAD", "USD"] as const).map((cur) => (
+                    <button
+                      key={cur}
+                      type="button"
+                      onClick={() => setNewOrgCurrency(cur)}
+                      className={`px-3 py-1.5 font-medium transition-colors ${
+                        newOrgCurrency === cur
+                          ? "bg-[#6c5ce7] text-white"
+                          : "bg-white/5 text-white/45 hover:text-white/70"
+                      }`}
+                    >
+                      {cur}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Plan selection */}
+              <div className="grid grid-cols-3 gap-2">
+                {PLAN_OPTIONS.map(({ id, name, athletes, Icon, iconColor, iconBg, pricing }) => {
+                  const selected = newOrgPlan === id;
+                  return (
+                    <button
+                      key={id}
+                      type="button"
+                      onClick={() => setNewOrgPlan(id)}
+                      className={`flex flex-col items-start p-3 rounded-xl border text-left transition-all ${
+                        selected
+                          ? "border-[#6c5ce7] bg-[#6c5ce7]/15 ring-1 ring-[#6c5ce7]"
+                          : "border-white/10 bg-white/5 hover:border-white/20"
+                      }`}
+                    >
+                      <div className={`w-7 h-7 rounded-lg flex items-center justify-center mb-2 ${iconBg}`}>
+                        <Icon className={`w-4 h-4 ${iconColor}`} />
+                      </div>
+                      <p className="text-white text-xs font-semibold">{name}</p>
+                      <p className="text-[#a78bfa] text-xs font-bold">{pricing[newOrgCurrency]}<span className="text-white/30 font-normal">/mo</span></p>
+                      <p className="text-white/35 text-[10px] mt-0.5">{athletes} athletes</p>
+                    </button>
+                  );
+                })}
+              </div>
+
               {createOrgError && (
                 <div className="px-3 py-2 bg-red-600/20 border border-red-600/30 rounded-lg text-red-400 text-sm">{createOrgError}</div>
               )}
@@ -1489,9 +1618,10 @@ export default function AccountPage() {
                   Cancel
                 </button>
                 <button type="submit" disabled={creatingOrg} className="flex items-center gap-2 px-4 py-2 bg-[#6c5ce7] hover:bg-[#5a4dd4] text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50">
-                  {creatingOrg ? <><Loader2 className="w-4 h-4 animate-spin" /> Creating…</> : "Create"}
+                  {creatingOrg ? <><Loader2 className="w-4 h-4 animate-spin" /> Creating…</> : "Create & Set Up Billing"}
                 </button>
               </div>
+              <p className="text-center text-xs text-white/25">You'll be redirected to Stripe to set up billing after creation.</p>
             </form>
           </div>
         </div>
