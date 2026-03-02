@@ -16,24 +16,72 @@
         }
       ],
       "secrets": [
-        { "name": "DATABASE_URL",          "valueFrom": "arn:aws:ssm:us-east-2:555434054017:parameter/athletiq/DATABASE_URL" },
-        { "name": "AWS_ACCESS_KEY_ID",     "valueFrom": "arn:aws:ssm:us-east-2:555434054017:parameter/athletiq/AWS_ACCESS_KEY_ID" },
-        { "name": "AWS_SECRET_ACCESS_KEY", "valueFrom": "arn:aws:ssm:us-east-2:555434054017:parameter/athletiq/AWS_SECRET_ACCESS_KEY" },
-        { "name": "S3_ACCESS_KEY_ID",      "valueFrom": "arn:aws:ssm:us-east-2:555434054017:parameter/athletiq/S3_ACCESS_KEY_ID" },
-        { "name": "S3_SECRET_ACCESS_KEY",  "valueFrom": "arn:aws:ssm:us-east-2:555434054017:parameter/athletiq/S3_SECRET_ACCESS_KEY" },
-        { "name": "STRIPE_SECRET_KEY",      "valueFrom": "arn:aws:ssm:us-east-2:555434054017:parameter/athletiq/STRIPE_SECRET_KEY" },
-        { "name": "STRIPE_WEBHOOK_SECRET",  "valueFrom": "arn:aws:ssm:us-east-2:555434054017:parameter/athletiq/STRIPE_WEBHOOK_SECRET" }
+        {
+          "name": "DATABASE_URL",
+          "valueFrom": "arn:aws:ssm:us-east-2:555434054017:parameter/athletiq/DATABASE_URL"
+        },
+        {
+          "name": "AWS_ACCESS_KEY_ID",
+          "valueFrom": "arn:aws:ssm:us-east-2:555434054017:parameter/athletiq/AWS_ACCESS_KEY_ID"
+        },
+        {
+          "name": "AWS_SECRET_ACCESS_KEY",
+          "valueFrom": "arn:aws:ssm:us-east-2:555434054017:parameter/athletiq/AWS_SECRET_ACCESS_KEY"
+        },
+        {
+          "name": "S3_ACCESS_KEY_ID",
+          "valueFrom": "arn:aws:ssm:us-east-2:555434054017:parameter/athletiq/S3_ACCESS_KEY_ID"
+        },
+        {
+          "name": "S3_SECRET_ACCESS_KEY",
+          "valueFrom": "arn:aws:ssm:us-east-2:555434054017:parameter/athletiq/S3_SECRET_ACCESS_KEY"
+        },
+        {
+          "name": "STRIPE_SECRET_KEY",
+          "valueFrom": "arn:aws:ssm:us-east-2:555434054017:parameter/athletiq/STRIPE_SECRET_KEY"
+        },
+        {
+          "name": "STRIPE_WEBHOOK_SECRET",
+          "valueFrom": "arn:aws:ssm:us-east-2:555434054017:parameter/athletiq/STRIPE_WEBHOOK_SECRET"
+        },
+        {
+          "name": "STRIPE_PRICE_STARTER_CAD",
+          "valueFrom": "/athletiq/STRIPE_PRICE_STARTER_CAD"
+        },
+        {
+          "name": "STRIPE_PRICE_STARTER_USD",
+          "valueFrom": "/athletiq/STRIPE_PRICE_STARTER_USD"
+        },
+        {
+          "name": "STRIPE_PRICE_GROWTH_CAD",
+          "valueFrom": "/athletiq/STRIPE_PRICE_GROWTH_CAD"
+        },
+        {
+          "name": "STRIPE_PRICE_GROWTH_USD",
+          "valueFrom": "/athletiq/STRIPE_PRICE_GROWTH_USD"
+        },
+        {
+          "name": "STRIPE_PRICE_PRO_CAD",
+          "valueFrom": "/athletiq/STRIPE_PRICE_PRO_CAD"
+        },
+        {
+          "name": "STRIPE_PRICE_PRO_USD",
+          "valueFrom": "/athletiq/STRIPE_PRICE_PRO_USD"
+        }
       ],
       "environment": [
-        { "name": "NODE_ENV",              "value": "production" },
-        { "name": "AWS_REGION",            "value": "us-east-2" },
-        { "name": "CORS_ORIGIN",           "value": "https://athletiq.fitness,https://www.athletiq.fitness" },
-        { "name": "SES_FROM_EMAIL",        "value": "no-reply@athletiq.fitness" },
-        { "name": "APP_URL",               "value": "https://athletiq.fitness" },
-        { "name": "S3_BUCKET_NAME",        "value": "athletiq-profile-pictures" },
-        { "name": "PLAYGROUND_USERNAME",   "value": "admin" },
-        { "name": "PLAYGROUND_PASSWORD",   "value": "" },
-        { "name": "PLAYGROUND_API_KEY",    "value": "" },
+        { "name": "NODE_ENV", "value": "production" },
+        { "name": "AWS_REGION", "value": "us-east-2" },
+        {
+          "name": "CORS_ORIGIN",
+          "value": "https://athletiq.fitness,https://www.athletiq.fitness"
+        },
+        { "name": "SES_FROM_EMAIL", "value": "no-reply@athletiq.fitness" },
+        { "name": "APP_URL", "value": "https://athletiq.fitness" },
+        { "name": "S3_BUCKET_NAME", "value": "athletiq-profile-pictures" },
+        { "name": "PLAYGROUND_USERNAME", "value": "admin" },
+        { "name": "PLAYGROUND_PASSWORD", "value": "" },
+        { "name": "PLAYGROUND_API_KEY", "value": "" },
         { "name": "PLAYGROUND_USER_EMAIL", "value": "" }
       ],
       "logConfiguration": {
