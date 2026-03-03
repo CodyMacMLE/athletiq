@@ -78,6 +78,7 @@
         },
         { "name": "SES_FROM_EMAIL", "value": "no-reply@athletiq.fitness" },
         { "name": "APP_URL", "value": "https://athletiq.fitness" },
+        { "name": "DASHBOARD_URL", "value": "https://app.athletiq.fitness" },
         { "name": "S3_BUCKET_NAME", "value": "athletiq-profile-pictures" },
         { "name": "PLAYGROUND_USERNAME", "value": "admin" },
         { "name": "PLAYGROUND_PASSWORD", "value": "" },

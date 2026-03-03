@@ -154,7 +154,7 @@ export const subscriptionsResolvers = {
       }
 
       // Create a Stripe Checkout Session for the subscription.
-      const appUrl = process.env.APP_URL ?? "https://app.athletiq.fitness";
+      const dashboardUrl = process.env.DASHBOARD_URL ?? "https://app.athletiq.fitness";
       const session = await stripeClient.checkout.sessions.create({
         customer: customerId,
         mode: "subscription",
@@ -163,8 +163,8 @@ export const subscriptionsResolvers = {
           trial_period_days: TRIAL_DAYS,
           metadata: { organizationId, tier, currency: cur, billingPeriod },
         },
-        success_url: `${appUrl}/dashboard?subscription=success`,
-        cancel_url: `${appUrl}/register?subscription=cancel`,
+        success_url: `${dashboardUrl}/settings?subscription=success`,
+        cancel_url: `${dashboardUrl}/settings`,
         currency: cur,
       });
 
@@ -203,7 +203,7 @@ export const subscriptionsResolvers = {
           });
         }
 
-        const appUrl = process.env.APP_URL ?? "https://app.athletiq.fitness";
+        const dashboardUrl = process.env.DASHBOARD_URL ?? "https://app.athletiq.fitness";
         const session = await stripeClient.checkout.sessions.create({
           customer: customerId,
           mode: "subscription",
@@ -212,8 +212,8 @@ export const subscriptionsResolvers = {
             trial_period_days: TRIAL_DAYS,
             metadata: { organizationId, tier: newTier, currency: cur, billingPeriod: org.billingPeriod },
           },
-          success_url: `${appUrl}/settings?subscription=success`,
-          cancel_url: `${appUrl}/settings?subscription=cancel`,
+          success_url: `${dashboardUrl}/settings?subscription=success`,
+          cancel_url: `${dashboardUrl}/settings`,
           currency: cur,
         });
 
@@ -263,19 +263,25 @@ export const subscriptionsResolvers = {
       context: { userId?: string }
     ) => {
       await requireOrgAdmin(context, organizationId);
-      if (!stripeClient) throw new Error("Stripe is not configured");
 
       const org = await getOrgOrThrow(organizationId);
-      if (!org.stripeSubscriptionId) throw new Error("No active subscription found");
 
-      await stripeClient.subscriptions.update(org.stripeSubscriptionId, {
-        cancel_at_period_end: true,
+      if (org.stripeSubscriptionId && stripeClient) {
+        // Cancel via Stripe — access continues until period end.
+        await stripeClient.subscriptions.update(org.stripeSubscriptionId, {
+          cancel_at_period_end: true,
+        });
+        logger.info({ organizationId }, "Subscription set to cancel at period end");
+      }
+
+      // Mark canceled in DB (covers both Stripe-backed and trial-only orgs).
+      const updatedOrg = await prisma.organization.update({
+        where: { id: organizationId },
+        data: { subscriptionStatus: "CANCELED" },
       });
 
-      logger.info({ organizationId }, "Subscription set to cancel at period end");
-
       const athleteCount = await getAthleteCount(organizationId);
-      return buildOrgSubscriptionPayload(org, athleteCount);
+      return buildOrgSubscriptionPayload(updatedOrg, athleteCount);
     },
   },
 };

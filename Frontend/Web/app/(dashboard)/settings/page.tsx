@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@apollo/client/react";
 import { gql } from "@apollo/client";
+import { useSearchParams } from "next/navigation";
 import { useAuth } from "@/contexts/AuthContext";
 import { GET_ORG_SEASONS, CREATE_ORG_SEASON, UPDATE_ORG_SEASON, DELETE_ORG_SEASON, GET_ORGANIZATION, UPDATE_ORGANIZATION_SETTINGS, GET_ORGANIZATION_VENUES, CREATE_VENUE, UPDATE_VENUE, DELETE_VENUE, GET_CUSTOM_ROLES } from "@/lib/graphql";
 import { GET_STRIPE_CONNECT_STATUS } from "@/lib/graphql/queries";
@@ -208,11 +209,21 @@ export default function SettingsPage() {
   const [createConnectLink] = useMutation<any>(CREATE_STRIPE_CONNECT_LINK);
   const [disconnectStripe] = useMutation<any>(DISCONNECT_STRIPE_ACCOUNT);
 
+  const searchParams = useSearchParams();
+
   const { data: subscriptionData, refetch: refetchSubscription } = useQuery<any>(GET_ORG_SUBSCRIPTION, {
     variables: { organizationId: selectedOrganizationId },
     skip: !selectedOrganizationId || !canManageOrg,
+    fetchPolicy: "cache-and-network",
   });
   const sub = subscriptionData?.orgSubscription;
+
+  // Refetch subscription when returning from Stripe checkout.
+  useEffect(() => {
+    if (searchParams.get("subscription") === "success" && selectedOrganizationId && canManageOrg) {
+      refetchSubscription();
+    }
+  }, [searchParams, selectedOrganizationId, canManageOrg]);
   const [changeSubscriptionTier, { loading: tierChanging }] = useMutation<any>(CHANGE_SUBSCRIPTION_TIER);
   const [cancelSubscription, { loading: canceling }] = useMutation<any>(CANCEL_SUBSCRIPTION);
 
