@@ -1,5 +1,6 @@
 import { prisma } from "../../db.js";
 import { OrgRole, TeamRole } from "@prisma/client";
+import { requireTierFeature } from "../../utils/permissions.js";
 import { toISO, getSeasonDateRange, isTeamInCurrentSeason, toWeekStart } from "../../utils/time.js";
 import { computeEventDuration } from "../../utils/time.js";
 import { filterEventsByMembership, MembershipPeriod } from "../../utils/membershipPeriods.js";
@@ -212,6 +213,7 @@ export const analyticsResolvers = {
       _: unknown,
       { organizationId, teamId, timeRange }: { organizationId: string; teamId?: string; timeRange?: string }
     ) => {
+      await requireTierFeature(organizationId, "advancedAnalytics");
       const coachTeamMap = await getNonAthleteTeamMap(organizationId);
 
       // Get season date range - if teamId provided, use that team's season, otherwise use first current season team
@@ -663,6 +665,7 @@ export const analyticsResolvers = {
       _: unknown,
       { organizationId, timeRange, limit }: { organizationId: string; timeRange?: string; limit?: number }
     ) => {
+      await requireTierFeature(organizationId, "advancedAnalytics");
       const members = await prisma.teamMember.findMany({
         where: { team: { organizationId }, role: { in: ["MEMBER", "CAPTAIN"] as TeamRole[] } },
         include: {
@@ -767,6 +770,7 @@ export const analyticsResolvers = {
       _: unknown,
       { organizationId, timeRange }: { organizationId: string; timeRange?: string }
     ) => {
+      await requireTierFeature(organizationId, "advancedAnalytics");
       const allTeams = await prisma.team.findMany({
         where: { organizationId, archivedAt: null },
         include: { members: { where: { role: { in: ["MEMBER", "CAPTAIN"] as TeamRole[] } } }, orgSeason: true },
@@ -814,6 +818,7 @@ export const analyticsResolvers = {
       _: unknown,
       { organizationId, teamId }: { organizationId: string; teamId?: string }
     ) => {
+      await requireTierFeature(organizationId, "advancedAnalytics");
       // Resolve season date range from the org's active teams
       const teams = await prisma.team.findMany({
         where: { organizationId, archivedAt: null },
@@ -1082,6 +1087,7 @@ export const analyticsResolvers = {
       if (!callerMembership || !["OWNER", "ADMIN", "MANAGER"].includes(callerMembership.role)) {
         throw new Error("Not authorized");
       }
+      await requireTierFeature(organizationId, "advancedReporting");
 
       const startDate = new Date(year, month - 1, 1);
       const endDate = new Date(year, month, 1);

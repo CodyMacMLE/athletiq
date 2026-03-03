@@ -1,6 +1,7 @@
 import { GraphQLError } from "graphql";
 import { OrgRole } from "@prisma/client";
 import { prisma } from "../db.js";
+import { tierHasFeature, getAthleteLimit, type SubscriptionTierKey, type TierConfig } from "./subscriptions.js";
 
 export type OrgPermissionAction =
   | "canEditEvents"
@@ -70,6 +71,73 @@ export async function requireOrgOwner(
   organizationId: string
 ): Promise<string> {
   return requireOrgRole(context, organizationId, [OrgRole.OWNER]);
+}
+
+/**
+ * Throws SUBSCRIPTION_CANCELED if the org's subscription is canceled.
+ * Call before any mutation that should be blocked for canceled orgs.
+ */
+export async function requireActiveSubscription(organizationId: string): Promise<void> {
+  const org = await prisma.organization.findUnique({
+    where: { id: organizationId },
+    select: { subscriptionStatus: true },
+  });
+  if (!org) {
+    throw new GraphQLError("Organization not found", { extensions: { code: "NOT_FOUND" } });
+  }
+  if (org.subscriptionStatus === "CANCELED") {
+    throw new GraphQLError(
+      "Your subscription has been canceled. Please renew to continue.",
+      { extensions: { code: "SUBSCRIPTION_CANCELED" } }
+    );
+  }
+}
+
+/**
+ * Throws SUBSCRIPTION_TIER_REQUIRED if the org's current tier does not include `feature`.
+ * Call at the top of queries/mutations gated behind a tier.
+ */
+export async function requireTierFeature(
+  organizationId: string,
+  feature: keyof TierConfig["features"]
+): Promise<void> {
+  const org = await prisma.organization.findUnique({
+    where: { id: organizationId },
+    select: { subscriptionTier: true },
+  });
+  if (!org) {
+    throw new GraphQLError("Organization not found", { extensions: { code: "NOT_FOUND" } });
+  }
+  if (!tierHasFeature(org.subscriptionTier as SubscriptionTierKey, feature)) {
+    throw new GraphQLError(
+      "This feature requires a higher subscription tier. Please upgrade your plan.",
+      { extensions: { code: "SUBSCRIPTION_TIER_REQUIRED" } }
+    );
+  }
+}
+
+/**
+ * Throws ATHLETE_LIMIT_REACHED if the org is at or above its plan's athlete limit.
+ * Call before adding a new ATHLETE member to an org.
+ */
+export async function enforceAthleteLimit(organizationId: string): Promise<void> {
+  const org = await prisma.organization.findUnique({
+    where: { id: organizationId },
+    select: { subscriptionTier: true },
+  });
+  if (!org) {
+    throw new GraphQLError("Organization not found", { extensions: { code: "NOT_FOUND" } });
+  }
+  const limit = getAthleteLimit(org.subscriptionTier as SubscriptionTierKey);
+  const currentCount = await prisma.organizationMember.count({
+    where: { organizationId, role: "ATHLETE" },
+  });
+  if (currentCount >= limit) {
+    throw new GraphQLError(
+      `Athlete limit reached (${currentCount}/${limit}). Upgrade your plan to add more athletes.`,
+      { extensions: { code: "ATHLETE_LIMIT_REACHED" } }
+    );
+  }
 }
 
 /**

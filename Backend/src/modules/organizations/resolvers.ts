@@ -1,7 +1,7 @@
 import { prisma } from "../../db.js";
 import { OrgRole, TeamRole } from "@prisma/client";
 import { sendInviteEmail } from "../../email.js";
-import { requireOrgAdmin, requireOrgOwner } from "../../utils/permissions.js";
+import { requireOrgAdmin, requireOrgOwner, requireActiveSubscription, enforceAthleteLimit } from "../../utils/permissions.js";
 import { auditLog } from "../../utils/audit.js";
 import { toISO } from "../../utils/time.js";
 import type { Loaders } from "../../utils/dataLoaders.js";
@@ -90,8 +90,15 @@ export const organizationResolvers = {
     // Organization member mutations
     addOrgMember: async (
       _: unknown,
-      { input }: { input: { userId: string; organizationId: string; role?: OrgRole } }
+      { input }: { input: { userId: string; organizationId: string; role?: OrgRole } },
+      context: { userId?: string }
     ) => {
+      await requireOrgAdmin(context, input.organizationId);
+      await requireActiveSubscription(input.organizationId);
+      const role = input.role || "ATHLETE";
+      if (role === "ATHLETE") {
+        await enforceAthleteLimit(input.organizationId);
+      }
       return prisma.organizationMember.upsert({
         where: {
           userId_organizationId: {
@@ -103,7 +110,7 @@ export const organizationResolvers = {
         create: {
           userId: input.userId,
           organizationId: input.organizationId,
-          role: input.role || "ATHLETE",
+          role,
         },
       });
     },
@@ -261,8 +268,15 @@ export const organizationResolvers = {
     // Invite mutations
     createInvite: async (
       _: unknown,
-      { input }: { input: { email: string; organizationId: string; role?: OrgRole; teamIds?: string[] } }
+      { input }: { input: { email: string; organizationId: string; role?: OrgRole; teamIds?: string[] } },
+      context: { userId?: string }
     ) => {
+      await requireOrgAdmin(context, input.organizationId);
+      await requireActiveSubscription(input.organizationId);
+      const inviteRole = input.role || "ATHLETE";
+      if (inviteRole === "ATHLETE") {
+        await enforceAthleteLimit(input.organizationId);
+      }
       // Check if email is already an active org member
       const existingMember = await prisma.organizationMember.findFirst({
         where: {
@@ -328,6 +342,11 @@ export const organizationResolvers = {
       if (!invite) throw new Error("Invite not found");
       if (invite.status !== "PENDING") throw new Error("Invite is no longer valid");
       if (invite.expiresAt < new Date()) throw new Error("Invite has expired");
+
+      await requireActiveSubscription(invite.organizationId);
+      if (invite.role === "ATHLETE") {
+        await enforceAthleteLimit(invite.organizationId);
+      }
 
       const result = await prisma.$transaction(async (tx) => {
         // Upsert org membership

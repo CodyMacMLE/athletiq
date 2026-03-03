@@ -2,6 +2,7 @@ import { prisma } from "../../db.js";
 import { EventType, RecurrenceFrequency, TeamRole } from "@prisma/client";
 import { requireCoachOrAbove } from "../../utils/permissions.js";
 import { validate, createEventInputSchema, updateEventInputSchema } from "../../utils/validate.js";
+import { requireActiveSubscription } from "../../utils/permissions.js";
 import { parseDateInput, toISO } from "../../utils/time.js";
 import { generateRecurringDates } from "../../utils/recurrence.js";
 import { parseTimeString } from "../../utils/time.js";
@@ -319,6 +320,7 @@ export const eventResolvers = {
       context: { userId?: string }
     ) => {
       await requireCoachOrAbove(context, input.organizationId);
+      await requireActiveSubscription(input.organizationId);
       validate(createEventInputSchema, input);
       const { participatingTeamIds, endDate, ...eventData } = input;
       return prisma.event.create({

@@ -6,14 +6,20 @@ vi.mock("../../db.js", () => ({
   prisma: {
     organizationMember: {
       findUnique: vi.fn(),
+      count: vi.fn(),
+    },
+    organization: {
+      findUnique: vi.fn(),
     },
   },
 }));
 
-import { requireAuth, requireOrgRole, requireOrgAdmin, requireOrgOwner, requireCoachOrAbove, hasOrgPermission } from "../permissions.js";
+import { requireAuth, requireOrgRole, requireOrgAdmin, requireOrgOwner, requireCoachOrAbove, hasOrgPermission, requireActiveSubscription, requireTierFeature, enforceAthleteLimit } from "../permissions.js";
 import { prisma } from "../../db.js";
 
 const mockFindUnique = vi.mocked(prisma.organizationMember.findUnique);
+const mockOrgFindUnique = vi.mocked(prisma.organization.findUnique);
+const mockMemberCount = vi.mocked(prisma.organizationMember.count);
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -225,5 +231,109 @@ describe("hasOrgPermission", () => {
       expect(await hasOrgPermission({ userId: "u1" }, "org-1", "canViewAnalytics")).toBe(true);
       expect(await hasOrgPermission({ userId: "u1" }, "org-1", "canEditEvents")).toBe(false);
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// requireActiveSubscription
+// ---------------------------------------------------------------------------
+describe("requireActiveSubscription", () => {
+  it("resolves without error for ACTIVE status", async () => {
+    mockOrgFindUnique.mockResolvedValue({ subscriptionStatus: "ACTIVE" } as any);
+    await expect(requireActiveSubscription("org-1")).resolves.toBeUndefined();
+  });
+
+  it("resolves without error for TRIALING status", async () => {
+    mockOrgFindUnique.mockResolvedValue({ subscriptionStatus: "TRIALING" } as any);
+    await expect(requireActiveSubscription("org-1")).resolves.toBeUndefined();
+  });
+
+  it("resolves without error for PAST_DUE status", async () => {
+    mockOrgFindUnique.mockResolvedValue({ subscriptionStatus: "PAST_DUE" } as any);
+    await expect(requireActiveSubscription("org-1")).resolves.toBeUndefined();
+  });
+
+  it("throws SUBSCRIPTION_CANCELED for CANCELED status", async () => {
+    mockOrgFindUnique.mockResolvedValue({ subscriptionStatus: "CANCELED" } as any);
+    await expect(requireActiveSubscription("org-1")).rejects.toThrow(
+      expect.objectContaining({ extensions: expect.objectContaining({ code: "SUBSCRIPTION_CANCELED" }) })
+    );
+  });
+
+  it("throws NOT_FOUND when org does not exist", async () => {
+    mockOrgFindUnique.mockResolvedValue(null);
+    await expect(requireActiveSubscription("org-missing")).rejects.toThrow(
+      expect.objectContaining({ extensions: expect.objectContaining({ code: "NOT_FOUND" }) })
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// requireTierFeature
+// ---------------------------------------------------------------------------
+describe("requireTierFeature", () => {
+  it("resolves when GROWTH tier has advancedAnalytics", async () => {
+    mockOrgFindUnique.mockResolvedValue({ subscriptionTier: "GROWTH" } as any);
+    await expect(requireTierFeature("org-1", "advancedAnalytics")).resolves.toBeUndefined();
+  });
+
+  it("resolves when PRO tier has advancedReporting", async () => {
+    mockOrgFindUnique.mockResolvedValue({ subscriptionTier: "PRO" } as any);
+    await expect(requireTierFeature("org-1", "advancedReporting")).resolves.toBeUndefined();
+  });
+
+  it("throws SUBSCRIPTION_TIER_REQUIRED when STARTER tier lacks advancedAnalytics", async () => {
+    mockOrgFindUnique.mockResolvedValue({ subscriptionTier: "STARTER" } as any);
+    await expect(requireTierFeature("org-1", "advancedAnalytics")).rejects.toThrow(
+      expect.objectContaining({ extensions: expect.objectContaining({ code: "SUBSCRIPTION_TIER_REQUIRED" }) })
+    );
+  });
+
+  it("throws SUBSCRIPTION_TIER_REQUIRED when GROWTH tier lacks advancedReporting", async () => {
+    mockOrgFindUnique.mockResolvedValue({ subscriptionTier: "GROWTH" } as any);
+    await expect(requireTierFeature("org-1", "advancedReporting")).rejects.toThrow(
+      expect.objectContaining({ extensions: expect.objectContaining({ code: "SUBSCRIPTION_TIER_REQUIRED" }) })
+    );
+  });
+
+  it("throws NOT_FOUND when org does not exist", async () => {
+    mockOrgFindUnique.mockResolvedValue(null);
+    await expect(requireTierFeature("org-missing", "advancedAnalytics")).rejects.toThrow(
+      expect.objectContaining({ extensions: expect.objectContaining({ code: "NOT_FOUND" }) })
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// enforceAthleteLimit
+// ---------------------------------------------------------------------------
+describe("enforceAthleteLimit", () => {
+  it("resolves when current athlete count is below the tier limit", async () => {
+    mockOrgFindUnique.mockResolvedValue({ subscriptionTier: "STARTER" } as any); // limit = 75
+    mockMemberCount.mockResolvedValue(74 as any);
+    await expect(enforceAthleteLimit("org-1")).resolves.toBeUndefined();
+  });
+
+  it("throws ATHLETE_LIMIT_REACHED when at the limit", async () => {
+    mockOrgFindUnique.mockResolvedValue({ subscriptionTier: "STARTER" } as any); // limit = 75
+    mockMemberCount.mockResolvedValue(75 as any);
+    await expect(enforceAthleteLimit("org-1")).rejects.toThrow(
+      expect.objectContaining({ extensions: expect.objectContaining({ code: "ATHLETE_LIMIT_REACHED" }) })
+    );
+  });
+
+  it("throws ATHLETE_LIMIT_REACHED when above the limit", async () => {
+    mockOrgFindUnique.mockResolvedValue({ subscriptionTier: "GROWTH" } as any); // limit = 200
+    mockMemberCount.mockResolvedValue(201 as any);
+    await expect(enforceAthleteLimit("org-1")).rejects.toThrow(
+      expect.objectContaining({ extensions: expect.objectContaining({ code: "ATHLETE_LIMIT_REACHED" }) })
+    );
+  });
+
+  it("throws NOT_FOUND when org does not exist", async () => {
+    mockOrgFindUnique.mockResolvedValue(null);
+    await expect(enforceAthleteLimit("org-missing")).rejects.toThrow(
+      expect.objectContaining({ extensions: expect.objectContaining({ code: "NOT_FOUND" }) })
+    );
   });
 });

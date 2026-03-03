@@ -1,6 +1,6 @@
 import { prisma } from "../../db.js";
 import { TeamRole } from "@prisma/client";
-import { requireAuth, requireOrgAdmin } from "../../utils/permissions.js";
+import { requireAuth, requireOrgAdmin, requireCoachOrAbove, requireActiveSubscription } from "../../utils/permissions.js";
 import { auditLog } from "../../utils/audit.js";
 import { toISO, getSeasonDateRange, generateSeasonDisplayString } from "../../utils/time.js";
 import { filterEventsByMembership, MembershipPeriod } from "../../utils/membershipPeriods.js";
@@ -31,7 +31,9 @@ export const teamResolvers = {
   },
 
   Mutation: {
-    createTeam: async (_: unknown, { input }: { input: { name: string; season?: string; sport?: string; color?: string; description?: string; organizationId: string; orgSeasonId?: string; seasonYear?: number } }) => {
+    createTeam: async (_: unknown, { input }: { input: { name: string; season?: string; sport?: string; color?: string; description?: string; organizationId: string; orgSeasonId?: string; seasonYear?: number } }, context: { userId?: string }) => {
+      await requireCoachOrAbove(context, input.organizationId);
+      await requireActiveSubscription(input.organizationId);
       let season = input.season;
       if (input.orgSeasonId && input.seasonYear) {
         const orgSeason = await prisma.orgSeason.findUnique({ where: { id: input.orgSeasonId } });

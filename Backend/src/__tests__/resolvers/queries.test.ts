@@ -147,6 +147,11 @@ describe("Query.attendanceTrends", () => {
   const mockEventFindMany = vi.mocked(prisma.event.findMany);
   const mockCheckInFindMany = vi.mocked(prisma.checkIn.findMany);
 
+  beforeEach(() => {
+    // attendanceTrends requires advancedAnalytics (GROWTH+)
+    mockOrgFindUnique.mockResolvedValue({ subscriptionTier: "GROWTH" } as any);
+  });
+
   it("returns weekly trend points grouped by Monday week start", async () => {
     // Two events in the same week (2025-09-08 is a Monday)
     const events = [
