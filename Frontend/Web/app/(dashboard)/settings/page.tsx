@@ -10,6 +10,39 @@ import { GET_STRIPE_CONNECT_STATUS } from "@/lib/graphql/queries";
 import { UPDATE_PAYROLL_CONFIG, CREATE_CUSTOM_ROLE, UPDATE_CUSTOM_ROLE, DELETE_CUSTOM_ROLE, CREATE_STRIPE_CONNECT_LINK, DISCONNECT_STRIPE_ACCOUNT } from "@/lib/graphql/mutations";
 import { HelpCircle, Calendar, Plus, Edit2, Trash2, X, Check, Shield, Heart, Building2, Bell, DollarSign, Percent, Users, CreditCard, ExternalLink, AlertCircle, Loader2, ArrowUpRight, Zap, BarChart2, Trophy } from "lucide-react";
 
+type PlanId = "STARTER" | "GROWTH" | "PRO";
+
+const PLAN_OPTIONS = [
+  {
+    id: "STARTER" as const,
+    name: "Starter",
+    athletes: 75,
+    Icon: Zap,
+    iconColor: "text-blue-400",
+    iconBg: "bg-blue-500/20",
+    pricing: { CAD: "$80", USD: "$59" },
+  },
+  {
+    id: "GROWTH" as const,
+    name: "Growth",
+    athletes: 200,
+    Icon: BarChart2,
+    iconColor: "text-purple-400",
+    iconBg: "bg-purple-500/20",
+    pricing: { CAD: "$200", USD: "$149" },
+  },
+  {
+    id: "PRO" as const,
+    name: "Pro",
+    athletes: 500,
+    Icon: Trophy,
+    iconColor: "text-yellow-400",
+    iconBg: "bg-yellow-500/20",
+    pricing: { CAD: "$450", USD: "$329" },
+  },
+] as const;
+
+
 const GET_ORG_SUBSCRIPTION = gql`
   query OrgSubscription($organizationId: ID!) {
     orgSubscription(organizationId: $organizationId) {
@@ -151,6 +184,11 @@ export default function SettingsPage() {
   const [connectError, setConnectError] = useState("");
   const [disconnectConfirm, setDisconnectConfirm] = useState(false);
 
+  // Renew subscription modal
+  const [showRenewModal, setShowRenewModal] = useState(false);
+  const [renewPlan, setRenewPlan] = useState<PlanId>("STARTER");
+  const [renewCurrency, setRenewCurrency] = useState<"CAD" | "USD">("USD");
+
   // Custom Roles
   const defaultRolePerms = { canEditEvents: false, canApproveExcuses: false, canViewAnalytics: true, canManageMembers: false, canManageTeams: false, canManagePayments: false };
   const [showRoleForm, setShowRoleForm] = useState(false);
@@ -238,6 +276,21 @@ export default function SettingsPage() {
       refetchSubscription();
     }
   }, [searchParams, selectedOrganizationId, canManageOrg]);
+
+  // Detect locale for renew modal default currency.
+  useEffect(() => {
+    if (typeof navigator !== "undefined") {
+      setRenewCurrency(navigator.language?.toLowerCase().endsWith("-ca") ? "CAD" : "USD");
+    }
+  }, []);
+
+  // Pre-select the current plan when opening the renew modal.
+  useEffect(() => {
+    if (showRenewModal && sub?.tier) {
+      setRenewPlan(sub.tier as PlanId);
+    }
+  }, [showRenewModal]);
+
   const [changeSubscriptionTier, { loading: tierChanging }] = useMutation<any>(CHANGE_SUBSCRIPTION_TIER);
   const [cancelSubscription, { loading: canceling }] = useMutation<any>(CANCEL_SUBSCRIPTION);
   const [renewSubscription, { loading: renewing }] = useMutation<any>(RENEW_SUBSCRIPTION);
@@ -1472,24 +1525,11 @@ export default function SettingsPage() {
             <div className="pt-2 border-t border-white/8">
               {sub.status === "CANCELED" ? (
                 <button
-                  disabled={renewing}
-                  onClick={async () => {
-                    try {
-                      const result = await renewSubscription({ variables: { organizationId: selectedOrganizationId } });
-                      const { checkoutUrl } = result.data?.renewSubscription ?? {};
-                      if (checkoutUrl) {
-                        window.location.href = checkoutUrl;
-                      } else {
-                        refetchSubscription();
-                      }
-                    } catch (err: any) {
-                      alert(err.message || "Failed to renew subscription.");
-                    }
-                  }}
-                  className="flex items-center gap-1.5 px-3 py-1.5 bg-[#6c5ce7]/20 border border-[#6c5ce7]/40 rounded-lg text-sm text-[#a78bfa] hover:bg-[#6c5ce7]/30 hover:border-[#6c5ce7]/60 transition-all disabled:opacity-50"
+                  onClick={() => setShowRenewModal(true)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-[#6c5ce7]/20 border border-[#6c5ce7]/40 rounded-lg text-sm text-[#a78bfa] hover:bg-[#6c5ce7]/30 hover:border-[#6c5ce7]/60 transition-all"
                 >
-                  {renewing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ArrowUpRight className="w-3.5 h-3.5" />}
-                  {renewing ? "Renewing…" : "Renew subscription"}
+                  <ArrowUpRight className="w-3.5 h-3.5" />
+                  Renew subscription
                 </button>
               ) : (sub.status === "ACTIVE" || sub.status === "TRIALING") && (
                 <button
@@ -1511,6 +1551,104 @@ export default function SettingsPage() {
             </div>
           </div>
         </section>
+      )}
+
+      {/* Renew Subscription Modal */}
+      {showRenewModal && (
+        <div className="fixed inset-0 backdrop-blur-sm flex items-center justify-center z-50 px-4">
+          <div className="bg-[#1e1845] backdrop-blur-xl rounded-xl border border-white/15 p-6 w-full max-w-sm shadow-2xl">
+            <div className="flex items-center justify-between mb-1">
+              <h2 className="text-base font-semibold text-white">Renew Subscription</h2>
+              <button onClick={() => setShowRenewModal(false)} className="text-white/40 hover:text-white transition-colors">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <p className="text-white/45 text-sm mb-4">Choose a plan to continue with.</p>
+
+            {/* Currency toggle */}
+            <div className="flex items-center justify-between mb-3">
+              <span className="text-xs text-white/45">Currency</span>
+              <div className="flex rounded-lg overflow-hidden border border-white/10">
+                {(["CAD", "USD"] as const).map((cur) => (
+                  <button
+                    key={cur}
+                    type="button"
+                    onClick={() => setRenewCurrency(cur)}
+                    className={`px-3 py-1.5 text-xs font-medium transition-colors ${
+                      renewCurrency === cur ? "bg-[#6c5ce7] text-white" : "bg-white/5 text-white/45 hover:text-white/70"
+                    }`}
+                  >
+                    {cur}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Plan cards */}
+            <div className="grid grid-cols-3 gap-2 mb-5">
+              {PLAN_OPTIONS.map(({ id, name, athletes, Icon, iconColor, iconBg, pricing }) => {
+                const selected = renewPlan === id;
+                return (
+                  <button
+                    key={id}
+                    type="button"
+                    onClick={() => setRenewPlan(id)}
+                    className={`flex flex-col items-start p-3 rounded-xl border text-left transition-all ${
+                      selected
+                        ? "border-[#6c5ce7] bg-[#6c5ce7]/15 ring-1 ring-[#6c5ce7]"
+                        : "border-white/10 bg-white/5 hover:border-white/20"
+                    }`}
+                  >
+                    <div className={`w-7 h-7 rounded-lg flex items-center justify-center mb-2 ${iconBg}`}>
+                      <Icon className={`w-4 h-4 ${iconColor}`} />
+                    </div>
+                    <p className="text-white text-xs font-semibold">{name}</p>
+                    <p className="text-[#a78bfa] text-xs font-bold">
+                      {pricing[renewCurrency]}<span className="text-white/30 font-normal">/mo</span>
+                    </p>
+                    <p className="text-white/35 text-[10px] mt-0.5">{athletes} athletes</p>
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="flex gap-3 justify-end">
+              <button
+                type="button"
+                onClick={() => setShowRenewModal(false)}
+                className="px-4 py-2 bg-white/8 hover:bg-white/12 text-white/65 text-sm font-medium rounded-lg transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                disabled={renewing}
+                onClick={async () => {
+                  try {
+                    const result = await renewSubscription({
+                      variables: {
+                        organizationId: selectedOrganizationId,
+                        tier: renewPlan,
+                        currency: renewCurrency.toLowerCase(),
+                      },
+                    });
+                    const { checkoutUrl } = result.data?.renewSubscription ?? {};
+                    if (checkoutUrl) {
+                      window.location.href = checkoutUrl;
+                    } else {
+                      setShowRenewModal(false);
+                      refetchSubscription();
+                    }
+                  } catch (err: any) {
+                    alert(err.message || "Failed to renew subscription.");
+                  }
+                }}
+                className="flex items-center gap-2 px-4 py-2 bg-[#6c5ce7] hover:bg-[#5a4dd4] text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50"
+              >
+                {renewing ? <><Loader2 className="w-4 h-4 animate-spin" /> Renewing…</> : "Continue →"}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Help & Support */}

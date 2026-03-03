@@ -259,7 +259,11 @@ export const subscriptionsResolvers = {
 
     renewSubscription: async (
       _: unknown,
-      { organizationId }: { organizationId: string },
+      { organizationId, tier: inputTier, currency: inputCurrency }: {
+        organizationId: string;
+        tier?: SubscriptionTierKey;
+        currency?: string;
+      },
       context: { userId?: string }
     ) => {
       await requireOrgAdmin(context, organizationId);
@@ -292,8 +296,8 @@ export const subscriptionsResolvers = {
       // No Stripe subscription (e.g. trial that was canceled) — start a new checkout.
       if (!stripeClient) throw new Error("Stripe is not configured");
 
-      const cur = normalizeCurrency(org.billingCurrency);
-      const tier = org.subscriptionTier as SubscriptionTierKey;
+      const cur = normalizeCurrency(inputCurrency ?? org.billingCurrency);
+      const tier = (inputTier ?? org.subscriptionTier) as SubscriptionTierKey;
       const priceId = getStripePriceId(tier, cur);
       if (!priceId) throw new Error(`Price not configured for ${tier}/${cur}`);
 
