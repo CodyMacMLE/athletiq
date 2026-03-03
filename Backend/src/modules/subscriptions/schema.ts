@@ -90,5 +90,11 @@ export const subscriptionsSchema = `#graphql
 
     # Cancels the subscription at period end.
     cancelSubscription(organizationId: ID!): OrgSubscription!
+
+    # Renews a canceled subscription.
+    # If a Stripe subscription exists it is reactivated (cancel_at_period_end → false).
+    # If no Stripe subscription exists (e.g. trial canceled) a new Checkout session
+    # is created and checkoutUrl is returned.
+    renewSubscription(organizationId: ID!): SubscriptionChangeResult!
   }
 `;

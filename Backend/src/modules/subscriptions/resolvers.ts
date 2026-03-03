@@ -257,6 +257,76 @@ export const subscriptionsResolvers = {
       return { subscription: buildOrgSubscriptionPayload(updatedOrg, athleteCount) };
     },
 
+    renewSubscription: async (
+      _: unknown,
+      { organizationId }: { organizationId: string },
+      context: { userId?: string }
+    ) => {
+      await requireOrgAdmin(context, organizationId);
+
+      const org = await getOrgOrThrow(organizationId);
+
+      // If a Stripe subscription exists, reactivate it by clearing cancel_at_period_end.
+      if (org.stripeSubscriptionId && stripeClient) {
+        const sub = await stripeClient.subscriptions.update(org.stripeSubscriptionId, {
+          cancel_at_period_end: false,
+        });
+
+        const statusMap: Record<string, SubscriptionStatus> = {
+          active: SubscriptionStatus.ACTIVE,
+          trialing: SubscriptionStatus.TRIALING,
+          past_due: SubscriptionStatus.PAST_DUE,
+          canceled: SubscriptionStatus.CANCELED,
+        };
+
+        const updatedOrg = await prisma.organization.update({
+          where: { id: organizationId },
+          data: { subscriptionStatus: statusMap[sub.status] ?? SubscriptionStatus.ACTIVE },
+        });
+
+        logger.info({ organizationId }, "Subscription renewed (cancel_at_period_end cleared)");
+        const athleteCount = await getAthleteCount(organizationId);
+        return { subscription: buildOrgSubscriptionPayload(updatedOrg, athleteCount) };
+      }
+
+      // No Stripe subscription (e.g. trial that was canceled) — start a new checkout.
+      if (!stripeClient) throw new Error("Stripe is not configured");
+
+      const cur = normalizeCurrency(org.billingCurrency);
+      const tier = org.subscriptionTier as SubscriptionTierKey;
+      const priceId = getStripePriceId(tier, cur);
+      if (!priceId) throw new Error(`Price not configured for ${tier}/${cur}`);
+
+      let customerId = org.stripeCustomerId;
+      if (!customerId) {
+        const customer = await stripeClient.customers.create({
+          name: org.name,
+          metadata: { organizationId },
+        });
+        customerId = customer.id;
+        await prisma.organization.update({
+          where: { id: organizationId },
+          data: { stripeCustomerId: customerId },
+        });
+      }
+
+      const dashboardUrl = process.env.DASHBOARD_URL ?? "https://app.athletiq.fitness";
+      const session = await stripeClient.checkout.sessions.create({
+        customer: customerId,
+        mode: "subscription",
+        line_items: [{ price: priceId, quantity: 1 }],
+        subscription_data: {
+          metadata: { organizationId, tier, currency: cur, billingPeriod: org.billingPeriod },
+        },
+        success_url: `${dashboardUrl}/settings?subscription=success`,
+        cancel_url: `${dashboardUrl}/settings`,
+        currency: cur,
+      });
+
+      logger.info({ organizationId, tier }, "Subscription renewal: new Checkout session created");
+      return { checkoutUrl: session.url! };
+    },
+
     cancelSubscription: async (
       _: unknown,
       { organizationId }: { organizationId: string },

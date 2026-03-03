@@ -50,6 +50,20 @@ const CANCEL_SUBSCRIPTION = gql`
   }
 `;
 
+const RENEW_SUBSCRIPTION = gql`
+  mutation RenewSubscription($organizationId: ID!) {
+    renewSubscription(organizationId: $organizationId) {
+      checkoutUrl
+      subscription {
+        tier
+        status
+        athleteLimit
+        currentPeriodEnd
+      }
+    }
+  }
+`;
+
 const MONTHS = [
   "January", "February", "March", "April", "May", "June",
   "July", "August", "September", "October", "November", "December",
@@ -226,6 +240,7 @@ export default function SettingsPage() {
   }, [searchParams, selectedOrganizationId, canManageOrg]);
   const [changeSubscriptionTier, { loading: tierChanging }] = useMutation<any>(CHANGE_SUBSCRIPTION_TIER);
   const [cancelSubscription, { loading: canceling }] = useMutation<any>(CANCEL_SUBSCRIPTION);
+  const [renewSubscription, { loading: renewing }] = useMutation<any>(RENEW_SUBSCRIPTION);
 
   const resetRoleForm = () => {
     setRoleForm({ name: "", description: "", ...defaultRolePerms });
@@ -1453,9 +1468,30 @@ export default function SettingsPage() {
               </div>
             )}
 
-            {/* Cancel */}
-            {(sub.status === "ACTIVE" || sub.status === "TRIALING") && (
-              <div className="pt-2 border-t border-white/8">
+            {/* Cancel / Renew */}
+            <div className="pt-2 border-t border-white/8">
+              {sub.status === "CANCELED" ? (
+                <button
+                  disabled={renewing}
+                  onClick={async () => {
+                    try {
+                      const result = await renewSubscription({ variables: { organizationId: selectedOrganizationId } });
+                      const { checkoutUrl } = result.data?.renewSubscription ?? {};
+                      if (checkoutUrl) {
+                        window.location.href = checkoutUrl;
+                      } else {
+                        refetchSubscription();
+                      }
+                    } catch (err: any) {
+                      alert(err.message || "Failed to renew subscription.");
+                    }
+                  }}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-[#6c5ce7]/20 border border-[#6c5ce7]/40 rounded-lg text-sm text-[#a78bfa] hover:bg-[#6c5ce7]/30 hover:border-[#6c5ce7]/60 transition-all disabled:opacity-50"
+                >
+                  {renewing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ArrowUpRight className="w-3.5 h-3.5" />}
+                  {renewing ? "Renewing…" : "Renew subscription"}
+                </button>
+              ) : (sub.status === "ACTIVE" || sub.status === "TRIALING") && (
                 <button
                   disabled={canceling}
                   onClick={async () => {
@@ -1471,8 +1507,8 @@ export default function SettingsPage() {
                 >
                   {canceling ? "Canceling…" : "Cancel subscription"}
                 </button>
-              </div>
-            )}
+              )}
+            </div>
           </div>
         </section>
       )}
