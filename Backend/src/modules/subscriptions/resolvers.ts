@@ -182,7 +182,50 @@ export const subscriptionsResolvers = {
       if (!stripeClient) throw new Error("Stripe is not configured");
 
       const org = await getOrgOrThrow(organizationId);
-      if (!org.stripeSubscriptionId) throw new Error("No active subscription found");
+
+      // No active Stripe subscription yet (checkout was never completed).
+      // Create a new Checkout session for the requested tier and return the URL.
+      if (!org.stripeSubscriptionId) {
+        const cur = normalizeCurrency(org.billingCurrency);
+        const priceId = getStripePriceId(newTier, cur);
+        if (!priceId) throw new Error(`Price not configured for ${newTier}/${cur}`);
+
+        let customerId = org.stripeCustomerId;
+        if (!customerId) {
+          const customer = await stripeClient.customers.create({
+            name: org.name,
+            metadata: { organizationId },
+          });
+          customerId = customer.id;
+          await prisma.organization.update({
+            where: { id: organizationId },
+            data: { stripeCustomerId: customerId },
+          });
+        }
+
+        const appUrl = process.env.APP_URL ?? "https://app.athletiq.fitness";
+        const session = await stripeClient.checkout.sessions.create({
+          customer: customerId,
+          mode: "subscription",
+          line_items: [{ price: priceId, quantity: 1 }],
+          subscription_data: {
+            trial_period_days: TRIAL_DAYS,
+            metadata: { organizationId, tier: newTier, currency: cur, billingPeriod: org.billingPeriod },
+          },
+          success_url: `${appUrl}/settings?subscription=success`,
+          cancel_url: `${appUrl}/settings?subscription=cancel`,
+          currency: cur,
+        });
+
+        // Pre-update the tier in DB so the UI reflects the chosen plan.
+        await prisma.organization.update({
+          where: { id: organizationId },
+          data: { subscriptionTier: newTier, athleteLimit: TIER_CONFIG[newTier].athleteLimit },
+        });
+
+        logger.info({ organizationId, newTier }, "changeSubscriptionTier: no sub found — redirecting to checkout");
+        return { checkoutUrl: session.url! };
+      }
 
       const cur = normalizeCurrency(org.billingCurrency);
       const newPriceId = getStripePriceId(newTier, cur);
@@ -211,7 +254,7 @@ export const subscriptionsResolvers = {
 
       const athleteCount = await getAthleteCount(organizationId);
       logger.info({ organizationId, from: org.subscriptionTier, to: newTier }, "Subscription tier changed");
-      return buildOrgSubscriptionPayload(updatedOrg, athleteCount);
+      return { subscription: buildOrgSubscriptionPayload(updatedOrg, athleteCount) };
     },
 
     cancelSubscription: async (

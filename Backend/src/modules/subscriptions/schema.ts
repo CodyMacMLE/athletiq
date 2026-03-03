@@ -54,6 +54,15 @@ export const subscriptionsSchema = `#graphql
     checkoutUrl: String!
   }
 
+  # Returned by changeSubscriptionTier.
+  # checkoutUrl is set when the org has no active Stripe subscription yet
+  # (e.g. checkout was never completed) — frontend should redirect there.
+  # subscription is set when the tier was updated in place.
+  type SubscriptionChangeResult {
+    checkoutUrl: String
+    subscription: OrgSubscription
+  }
+
   # ---- Queries ----
   extend type Query {
     # All available tiers with pricing for the given currency (default: usd)
@@ -73,10 +82,11 @@ export const subscriptionsSchema = `#graphql
     ): SubscriptionCheckoutResult!
 
     # Changes tier (upgrade or downgrade) on the existing subscription.
+    # If no Stripe subscription exists yet, returns a checkoutUrl to complete setup.
     changeSubscriptionTier(
       organizationId: ID!
       newTier: SubscriptionTier!
-    ): OrgSubscription!
+    ): SubscriptionChangeResult!
 
     # Cancels the subscription at period end.
     cancelSubscription(organizationId: ID!): OrgSubscription!

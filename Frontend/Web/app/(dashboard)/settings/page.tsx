@@ -28,10 +28,13 @@ const GET_ORG_SUBSCRIPTION = gql`
 const CHANGE_SUBSCRIPTION_TIER = gql`
   mutation ChangeSubscriptionTier($organizationId: ID!, $newTier: SubscriptionTier!) {
     changeSubscriptionTier(organizationId: $organizationId, newTier: $newTier) {
-      tier
-      status
-      athleteLimit
-      currentPeriodEnd
+      checkoutUrl
+      subscription {
+        tier
+        status
+        athleteLimit
+        currentPeriodEnd
+      }
     }
   }
 `;
@@ -1418,8 +1421,13 @@ export default function SettingsPage() {
                       onClick={async () => {
                         if (!confirm(`Switch to ${tier.charAt(0) + tier.slice(1).toLowerCase()} plan? Changes take effect immediately for upgrades.`)) return;
                         try {
-                          await changeSubscriptionTier({ variables: { organizationId: selectedOrganizationId, newTier: tier } });
-                          refetchSubscription();
+                          const result = await changeSubscriptionTier({ variables: { organizationId: selectedOrganizationId, newTier: tier } });
+                          const { checkoutUrl } = result.data?.changeSubscriptionTier ?? {};
+                          if (checkoutUrl) {
+                            window.location.href = checkoutUrl;
+                          } else {
+                            refetchSubscription();
+                          }
                         } catch (err: any) {
                           alert(err.message || "Failed to change plan.");
                         }
