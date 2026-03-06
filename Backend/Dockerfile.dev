@@ -1,0 +1,20 @@
+FROM node:20-alpine
+
+WORKDIR /app
+
+# Install dependencies (cached layer — only rebuilds when package.json changes)
+COPY package.json package-lock.json* ./
+RUN npm install
+
+# Copy prisma schema and generate client
+COPY prisma ./prisma
+RUN npx prisma generate
+
+# Copy tsconfig so tsx/path aliases resolve correctly
+COPY tsconfig.json ./
+
+EXPOSE 4000
+
+# On startup: regenerate prisma client (picks up any schema changes from
+# the mounted ./prisma volume), push schema to local db, then start with hot reload
+CMD ["sh", "-c", "npx prisma generate && npx prisma db push --accept-data-loss && npm run dev"]

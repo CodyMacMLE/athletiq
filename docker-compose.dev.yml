@@ -1,0 +1,71 @@
+services:
+
+  # ── PostgreSQL (local, mirrors prod schema via prisma db push) ──────────────
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: athletiq
+      POSTGRES_PASSWORD: athletiq
+      POSTGRES_DB: athletiq
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata_dev:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U athletiq"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # ── Backend (tsx watch — hot reload on src/ changes) ───────────────────────
+  backend:
+    build:
+      context: ./Backend
+      dockerfile: Dockerfile.dev
+    restart: unless-stopped
+    ports:
+      - "4000:4000"
+    depends_on:
+      db:
+        condition: service_healthy
+    # Load all existing backend env vars (AWS, SES, S3, Cognito, Stripe, etc.)
+    # then override DATABASE_URL to point at the local db container
+    env_file:
+      - ./Backend/.env
+    environment:
+      DATABASE_URL: postgresql://athletiq:athletiq@db:5432/athletiq
+      NODE_ENV: development
+    volumes:
+      # Mount source and prisma from host — enables hot reload
+      - ./Backend/src:/app/src
+      - ./Backend/prisma:/app/prisma
+      # node_modules stays inside the container (built by the image)
+      # so the host's node_modules (if any) never shadow the container's
+
+  # ── Frontend Web (next dev --turbopack) ────────────────────────────────────
+  frontend:
+    build:
+      context: ./Frontend/Web
+      dockerfile: Dockerfile.dev
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+    env_file:
+      - ./Frontend/Web/.env.local
+    environment:
+      # Ensure the browser-side API URL always hits the local backend
+      NEXT_PUBLIC_API_URL: http://localhost:4000/graphql
+    volumes:
+      # Mount the entire frontend source from host
+      - ./Frontend/Web:/app
+      # Preserve the container-built node_modules (anonymous volume wins over
+      # the host mount for this path — prevents node_modules from being wiped)
+      - /app/node_modules
+      # Keep the .next build cache inside the container for fast incremental builds
+      - /app/.next
+
+volumes:
+  pgdata_dev:

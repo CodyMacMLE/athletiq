@@ -1,10 +1,16 @@
+import Stripe from "stripe";
 import { prisma } from "../../db.js";
 import { OrgRole, TeamRole } from "@prisma/client";
 import { sendInviteEmail } from "../../email.js";
 import { requireOrgAdmin, requireOrgOwner, requireActiveSubscription, enforceAthleteLimit } from "../../utils/permissions.js";
 import { auditLog } from "../../utils/audit.js";
 import { toISO } from "../../utils/time.js";
+import { logger } from "../../utils/logger.js";
 import type { Loaders } from "../../utils/dataLoaders.js";
+
+const stripeClient = process.env.STRIPE_SECRET_KEY
+  ? new Stripe(process.env.STRIPE_SECRET_KEY, { apiVersion: "2026-02-25.clover" })
+  : null;
 
 interface Context {
   userId?: string;
@@ -82,8 +88,93 @@ export const organizationResolvers = {
 
     deleteOrganization: async (_: unknown, { id }: { id: string }, context: { userId?: string }) => {
       const actorId = await requireOrgOwner(context, id);
-      await prisma.organization.delete({ where: { id } });
-      await auditLog({ action: "DELETE_ORGANIZATION", actorId, targetId: id, targetType: "Organization", organizationId: id });
+
+      const org = await prisma.organization.findUniqueOrThrow({ where: { id } });
+
+      // Block deletion if the subscription is still active — owner must cancel first.
+      if (org.subscriptionStatus === "ACTIVE") {
+        throw new Error("You must cancel your subscription before deleting this organization.");
+      }
+
+      // If a Stripe subscription exists (e.g. trial that converted), cancel it immediately
+      // so no future charge fires after the org record is gone.
+      if (org.stripeSubscriptionId && stripeClient) {
+        try {
+          await stripeClient.subscriptions.cancel(org.stripeSubscriptionId);
+          logger.info({ organizationId: id }, "Stripe subscription canceled as part of org deletion");
+        } catch (err) {
+          // Non-fatal — log and continue. The org record is being deleted anyway.
+          logger.warn({ organizationId: id, err }, "Failed to cancel Stripe subscription during org deletion");
+        }
+      }
+
+      // Delete all org data in FK-safe order inside a single transaction.
+      // We explicitly delete every relation that lacks onDelete: Cascade from Organization.
+      await prisma.$transaction(async (tx) => {
+        // ── Event children (no cascade from Event) ───────────────────────────
+        await tx.checkIn.deleteMany({ where: { event: { organizationId: id } } });
+        await tx.excuseRequest.deleteMany({ where: { event: { organizationId: id } } });
+        await tx.eventRsvp.deleteMany({ where: { event: { organizationId: id } } });
+
+        // ── Events (EventAthleteInclude/Exclude cascade automatically) ────────
+        await tx.event.deleteMany({ where: { organizationId: id } });
+
+        // ── RecurringEvents (includes/excludes cascade automatically) ─────────
+        await tx.recurringEvent.deleteMany({ where: { organizationId: id } });
+
+        // ── Team children (no cascade from Team) ─────────────────────────────
+        await tx.teamMember.deleteMany({ where: { team: { organizationId: id } } });
+        await tx.teamChallenge.deleteMany({ where: { organizationId: id } });
+        await tx.athleteRecognition.deleteMany({ where: { organizationId: id } });
+
+        // ── Teams (TeamMemberHistory cascades automatically) ──────────────────
+        await tx.team.deleteMany({ where: { organizationId: id } });
+
+        // ── OrgSeasons (Teams referenced orgSeasonId, now deleted) ────────────
+        await tx.orgSeason.deleteMany({ where: { organizationId: id } });
+
+        // ── OrganizationMember (has customRoleId FK — delete before CustomRole) ─
+        await tx.organizationMember.deleteMany({ where: { organizationId: id } });
+
+        // ── CustomRole ────────────────────────────────────────────────────────
+        await tx.customRole.deleteMany({ where: { organizationId: id } });
+
+        // ── Announcements — clear notification delivery FK first ───────────────
+        await tx.notificationDelivery.deleteMany({
+          where: { announcement: { organizationId: id } },
+        });
+        await tx.announcement.deleteMany({ where: { organizationId: id } });
+
+        // ── Remaining org-level records ───────────────────────────────────────
+        await tx.invite.deleteMany({ where: { organizationId: id } });
+        await tx.nfcTag.deleteMany({ where: { organizationId: id } });
+        await tx.guardianLink.deleteMany({ where: { organizationId: id } });
+        await tx.medicalInfo.deleteMany({ where: { organizationId: id } });
+        await tx.emergencyContact.deleteMany({ where: { organizationId: id } });
+        await tx.earnedBadge.deleteMany({ where: { organizationId: id } });
+
+        // ── Financial records ─────────────────────────────────────────────────
+        await tx.payment.deleteMany({ where: { organizationId: id } });
+        await tx.invoice.deleteMany({ where: { organizationId: id } });
+
+        // ── Venue (referenced by Events, already deleted) ─────────────────────
+        await tx.venue.deleteMany({ where: { organizationId: id } });
+
+        // ── Organization (cascade: OrgReportSendRecord, AthleteStatusRecord, ──
+        // ── GymnasticsProfile, EmailReportConfig, Announcement) ───────────────
+        await tx.organization.delete({ where: { id } });
+      }, { timeout: 30_000 });
+
+      await auditLog({
+        action: "DELETE_ORGANIZATION",
+        actorId,
+        targetId: id,
+        targetType: "Organization",
+        organizationId: id,
+        metadata: { orgName: org.name },
+      });
+
+      logger.info({ actorId, organizationId: id, orgName: org.name }, "Organization deleted");
       return true;
     },
 

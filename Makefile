@@ -1,6 +1,6 @@
 ROOT := $(shell pwd)
 
-.PHONY: dev dev-backend dev-web dev-mobile
+.PHONY: dev dev-backend dev-web dev-mobile docker-up docker-down docker-build dev-seed
 
 # Start all three services in separate Terminal windows
 dev:
@@ -20,3 +20,19 @@ dev-web:
 
 dev-mobile:
 	cd Frontend/Mobile && npx expo start
+
+# ── Docker dev environment ───────────────────────────────────────────────────
+
+docker-up:
+	docker compose -f docker-compose.dev.yml up
+
+docker-build:
+	docker compose -f docker-compose.dev.yml up --build
+
+docker-down:
+	docker compose -f docker-compose.dev.yml down
+
+# Seed local Docker postgres from production RDS.
+# Requires pg_dump: brew install libpq && brew link --force libpq
+dev-seed:
+	@bash $(ROOT)/scripts/seed-from-prod.sh

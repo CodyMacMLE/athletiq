@@ -8,7 +8,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { GET_ORG_SEASONS, CREATE_ORG_SEASON, UPDATE_ORG_SEASON, DELETE_ORG_SEASON, GET_ORGANIZATION, UPDATE_ORGANIZATION_SETTINGS, GET_ORGANIZATION_VENUES, CREATE_VENUE, UPDATE_VENUE, DELETE_VENUE, GET_CUSTOM_ROLES } from "@/lib/graphql";
 import { GET_STRIPE_CONNECT_STATUS } from "@/lib/graphql/queries";
 import { UPDATE_PAYROLL_CONFIG, CREATE_CUSTOM_ROLE, UPDATE_CUSTOM_ROLE, DELETE_CUSTOM_ROLE, CREATE_STRIPE_CONNECT_LINK, DISCONNECT_STRIPE_ACCOUNT } from "@/lib/graphql/mutations";
-import { HelpCircle, Calendar, Plus, Edit2, Trash2, X, Check, Shield, Heart, Building2, Bell, DollarSign, Percent, Users, CreditCard, ExternalLink, AlertCircle, Loader2, ArrowUpRight, Zap, BarChart2, Trophy } from "lucide-react";
+import { HelpCircle, Calendar, Plus, Edit2, Trash2, X, Check, Shield, Heart, Building2, Bell, DollarSign, Percent, Users, CreditCard, ExternalLink, AlertCircle, Loader2, ArrowUpRight, Zap, BarChart2, Trophy, TriangleAlert } from "lucide-react";
 
 type PlanId = "STARTER" | "GROWTH" | "PRO";
 
@@ -80,6 +80,12 @@ const CANCEL_SUBSCRIPTION = gql`
       status
       currentPeriodEnd
     }
+  }
+`;
+
+const DELETE_ORGANIZATION = gql`
+  mutation DeleteOrganization($id: ID!) {
+    deleteOrganization(id: $id)
   }
 `;
 
@@ -189,6 +195,13 @@ export default function SettingsPage() {
   const [renewPlan, setRenewPlan] = useState<PlanId>("STARTER");
   const [renewCurrency, setRenewCurrency] = useState<"CAD" | "USD">("USD");
 
+  // Delete org modal
+  const [showDeleteOrgModal, setShowDeleteOrgModal] = useState(false);
+  const [deleteOrgStep, setDeleteOrgStep] = useState<1 | 2>(1);
+  const [deleteOrgConfirmed, setDeleteOrgConfirmed] = useState(false);
+  const [deleteOrgLoading, setDeleteOrgLoading] = useState(false);
+  const [deleteOrgError, setDeleteOrgError] = useState("");
+
   // Custom Roles
   const defaultRolePerms = { canEditEvents: false, canApproveExcuses: false, canViewAnalytics: true, canManageMembers: false, canManageTeams: false, canManagePayments: false };
   const [showRoleForm, setShowRoleForm] = useState(false);
@@ -294,6 +307,7 @@ export default function SettingsPage() {
   const [changeSubscriptionTier, { loading: tierChanging }] = useMutation<any>(CHANGE_SUBSCRIPTION_TIER);
   const [cancelSubscription, { loading: canceling }] = useMutation<any>(CANCEL_SUBSCRIPTION);
   const [renewSubscription, { loading: renewing }] = useMutation<any>(RENEW_SUBSCRIPTION);
+  const [deleteOrganization] = useMutation<any>(DELETE_ORGANIZATION);
 
   const resetRoleForm = () => {
     setRoleForm({ name: "", description: "", ...defaultRolePerms });
@@ -1669,6 +1683,167 @@ export default function SettingsPage() {
           </a>
         </div>
       </section>
+
+      {/* Danger Zone — owners only */}
+      {isOwner && (
+        <section className="mb-8">
+          <div className="flex items-center gap-2 mb-4">
+            <TriangleAlert className="w-5 h-5 text-red-400" />
+            <h2 className="text-lg font-semibold text-red-400">Danger Zone</h2>
+          </div>
+          <div className="bg-red-500/5 rounded-lg border border-red-500/20 p-4 flex items-center justify-between gap-4">
+            <div>
+              <p className="text-sm font-medium text-white">Delete Organization</p>
+              <p className="text-xs text-white/45 mt-0.5">
+                Permanently delete this organization and all of its data.
+              </p>
+            </div>
+            <button
+              onClick={() => {
+                setDeleteOrgStep(sub?.status === "ACTIVE" ? 1 : 2);
+                setDeleteOrgConfirmed(false);
+                setDeleteOrgError("");
+                setShowDeleteOrgModal(true);
+              }}
+              className="shrink-0 px-4 py-2 bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/30 rounded-lg text-sm font-medium transition-colors"
+            >
+              Delete Organization
+            </button>
+          </div>
+        </section>
+      )}
+
+      {/* Delete Organization Modal */}
+      {showDeleteOrgModal && (
+        <div className="fixed inset-0 backdrop-blur-sm flex items-center justify-center z-50 px-4">
+          <div className="bg-[#1a1035] backdrop-blur-xl rounded-xl border border-white/15 p-6 w-full max-w-md shadow-2xl">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <TriangleAlert className="w-5 h-5 text-red-400" />
+                <h2 className="text-base font-semibold text-white">Delete Organization</h2>
+              </div>
+              <button
+                onClick={() => setShowDeleteOrgModal(false)}
+                className="text-white/40 hover:text-white transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Step 1 — must cancel subscription first */}
+            {deleteOrgStep === 1 && (
+              <div>
+                <div className="flex items-start gap-3 bg-amber-500/10 border border-amber-500/20 rounded-lg p-3 mb-4">
+                  <AlertCircle className="w-4 h-4 text-amber-400 mt-0.5 shrink-0" />
+                  <p className="text-sm text-amber-200">
+                    Your subscription is currently <span className="font-semibold">active</span>. You must cancel it before deleting this organization.
+                  </p>
+                </div>
+                <p className="text-sm text-white/55 mb-5">
+                  After canceling, your access continues until the end of the current billing period. Once the subscription is canceled you can return here to delete the organization.
+                </p>
+                <div className="flex justify-end gap-3">
+                  <button
+                    onClick={() => setShowDeleteOrgModal(false)}
+                    className="px-4 py-2 text-sm text-white/55 hover:text-white transition-colors"
+                  >
+                    Close
+                  </button>
+                  <button
+                    disabled={canceling}
+                    onClick={async () => {
+                      try {
+                        await cancelSubscription({ variables: { organizationId: selectedOrganizationId } });
+                        await refetchSubscription();
+                        setDeleteOrgStep(2);
+                      } catch (err: any) {
+                        setDeleteOrgError(err.message || "Failed to cancel subscription.");
+                      }
+                    }}
+                    className="flex items-center gap-2 px-4 py-2 bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/30 rounded-lg text-sm font-medium transition-colors disabled:opacity-50"
+                  >
+                    {canceling ? <><Loader2 className="w-4 h-4 animate-spin" /> Canceling…</> : "Cancel Subscription"}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Step 2 — confirm deletion */}
+            {deleteOrgStep === 2 && (
+              <div>
+                <p className="text-sm text-white/70 mb-4">
+                  This will permanently delete <span className="font-semibold text-white">{orgData?.organization?.name}</span> and all of its data. This cannot be undone.
+                </p>
+                <ul className="space-y-2 mb-5">
+                  {[
+                    "All teams and team members will be removed",
+                    "All events and attendance records will be deleted",
+                    "All announcements, invoices, and payments will be deleted",
+                    "Member accounts are kept — they simply lose access to this org",
+                  ].map((item) => (
+                    <li key={item} className="flex items-start gap-2 text-sm text-white/55">
+                      <span className="text-red-400 mt-0.5 shrink-0">✕</span>
+                      {item}
+                    </li>
+                  ))}
+                </ul>
+
+                <label className="flex items-start gap-3 cursor-pointer mb-5 select-none">
+                  <div className="relative mt-0.5">
+                    <input
+                      type="checkbox"
+                      className="sr-only"
+                      checked={deleteOrgConfirmed}
+                      onChange={(e) => setDeleteOrgConfirmed(e.target.checked)}
+                    />
+                    <div className={`w-4 h-4 rounded border flex items-center justify-center transition-colors ${
+                      deleteOrgConfirmed ? "bg-red-500 border-red-500" : "border-white/30 bg-white/5"
+                    }`}>
+                      {deleteOrgConfirmed && <Check className="w-3 h-3 text-white" />}
+                    </div>
+                  </div>
+                  <span className="text-sm text-white/70">
+                    I understand that this action is <span className="text-white font-medium">permanent and irreversible</span>.
+                  </span>
+                </label>
+
+                {deleteOrgError && (
+                  <p className="text-sm text-red-400 mb-3">{deleteOrgError}</p>
+                )}
+
+                <div className="flex justify-end gap-3">
+                  <button
+                    onClick={() => setShowDeleteOrgModal(false)}
+                    className="px-4 py-2 text-sm text-white/55 hover:text-white transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    disabled={!deleteOrgConfirmed || deleteOrgLoading}
+                    onClick={async () => {
+                      setDeleteOrgLoading(true);
+                      setDeleteOrgError("");
+                      try {
+                        await deleteOrganization({ variables: { id: selectedOrganizationId } });
+                        // Reload to clear org context — user will land on org picker / onboarding
+                        window.location.href = "/";
+                      } catch (err: any) {
+                        setDeleteOrgError(err.message || "Failed to delete organization.");
+                        setDeleteOrgLoading(false);
+                      }
+                    }}
+                    className="flex items-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-sm font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    {deleteOrgLoading
+                      ? <><Loader2 className="w-4 h-4 animate-spin" /> Deleting…</>
+                      : "Delete Organization"}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
