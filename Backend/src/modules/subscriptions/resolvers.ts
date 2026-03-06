@@ -204,12 +204,12 @@ export const subscriptionsResolvers = {
         }
 
         const dashboardUrl = process.env.DASHBOARD_URL ?? "https://app.athletiq.fitness";
+        // Never grant a second trial — trial_period_days is only for createOrgSubscription.
         const session = await stripeClient.checkout.sessions.create({
           customer: customerId,
           mode: "subscription",
           line_items: [{ price: priceId, quantity: 1 }],
           subscription_data: {
-            trial_period_days: TRIAL_DAYS,
             metadata: { organizationId, tier: newTier, currency: cur, billingPeriod: org.billingPeriod },
           },
           success_url: `${dashboardUrl}/settings?subscription=success`,
@@ -223,7 +223,7 @@ export const subscriptionsResolvers = {
           data: { subscriptionTier: newTier, athleteLimit: TIER_CONFIG[newTier].athleteLimit },
         });
 
-        logger.info({ organizationId, newTier }, "changeSubscriptionTier: no sub found — redirecting to checkout");
+        logger.info({ organizationId, newTier }, "changeSubscriptionTier: no sub found — redirecting to checkout (no trial)");
         return { checkoutUrl: session.url! };
       }
 
@@ -436,11 +436,13 @@ export async function handleSubscriptionWebhook(event: Stripe.Event): Promise<bo
       });
       if (!org) return false;
 
+      // Clear stripeSubscriptionId so renewSubscription/changeSubscriptionTier
+      // correctly treat this org as having no active subscription.
       await prisma.organization.update({
         where: { id: org.id },
-        data: { subscriptionStatus: "CANCELED" },
+        data: { subscriptionStatus: "CANCELED", stripeSubscriptionId: null },
       });
-      logger.info({ organizationId: org.id }, "Subscription canceled");
+      logger.info({ organizationId: org.id }, "Subscription fully canceled — stripeSubscriptionId cleared");
       return true;
     }
 
