@@ -82,6 +82,7 @@ const mockOrgMemberCreate = vi.mocked(prisma.organizationMember.create);
 const mockOrgMemberFindUnique = vi.mocked(prisma.organizationMember.findUnique);
 const mockOrgMemberUpdate = vi.mocked(prisma.organizationMember.update);
 const mockOrgFindUnique = vi.mocked(prisma.organization.findUnique);
+const mockOrgFindUniqueOrThrow = vi.mocked(prisma.organization.findUniqueOrThrow);
 const mockOrgDelete = vi.mocked(prisma.organization.delete);
 const mockAuditCreate = vi.mocked(prisma.auditLog.create);
 const mockUserUpdate = vi.mocked(prisma.user.update);
@@ -218,9 +219,44 @@ describe("Mutation.deleteOrganization", () => {
 
   it("deletes the org and writes an audit log when caller is OWNER", async () => {
     mockOrgMemberFindUnique.mockResolvedValue({ role: "OWNER" } as any);
-    mockOrgFindUnique.mockResolvedValue({ id: "org-1", name: "Old Org" } as any);
-    mockOrgDelete.mockResolvedValue({ id: "org-1" } as any);
+    mockOrgFindUniqueOrThrow.mockResolvedValue({
+      id: "org-1",
+      name: "Old Org",
+      subscriptionStatus: "CANCELED",
+      stripeSubscriptionId: null,
+    } as any);
     mockAuditCreate.mockResolvedValue({} as any);
+
+    // Provide a tx with all the deleteMany/delete stubs the resolver needs
+    const txOrgDelete = vi.fn();
+    vi.mocked(prisma.$transaction).mockImplementationOnce(async (fn: any) => {
+      await fn({
+        checkIn: { deleteMany: vi.fn() },
+        excuseRequest: { deleteMany: vi.fn() },
+        eventRsvp: { deleteMany: vi.fn() },
+        event: { deleteMany: vi.fn() },
+        recurringEvent: { deleteMany: vi.fn() },
+        teamMember: { deleteMany: vi.fn() },
+        teamChallenge: { deleteMany: vi.fn() },
+        athleteRecognition: { deleteMany: vi.fn() },
+        team: { deleteMany: vi.fn() },
+        orgSeason: { deleteMany: vi.fn() },
+        organizationMember: { deleteMany: vi.fn() },
+        customRole: { deleteMany: vi.fn() },
+        notificationDelivery: { deleteMany: vi.fn() },
+        announcement: { deleteMany: vi.fn() },
+        invite: { deleteMany: vi.fn() },
+        nfcTag: { deleteMany: vi.fn() },
+        guardianLink: { deleteMany: vi.fn() },
+        medicalInfo: { deleteMany: vi.fn() },
+        emergencyContact: { deleteMany: vi.fn() },
+        earnedBadge: { deleteMany: vi.fn() },
+        payment: { deleteMany: vi.fn() },
+        invoice: { deleteMany: vi.fn() },
+        venue: { deleteMany: vi.fn() },
+        organization: { delete: txOrgDelete },
+      });
+    });
 
     const result = await resolvers.Mutation.deleteOrganization(
       null,
@@ -228,7 +264,7 @@ describe("Mutation.deleteOrganization", () => {
       makeContext("owner-1")
     );
 
-    expect(mockOrgDelete).toHaveBeenCalledWith({ where: { id: "org-1" } });
+    expect(txOrgDelete).toHaveBeenCalledWith({ where: { id: "org-1" } });
     expect(mockAuditCreate).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({
@@ -239,6 +275,20 @@ describe("Mutation.deleteOrganization", () => {
       })
     );
     expect(result).toBe(true);
+  });
+
+  it("throws if subscription is ACTIVE", async () => {
+    mockOrgMemberFindUnique.mockResolvedValue({ role: "OWNER" } as any);
+    mockOrgFindUniqueOrThrow.mockResolvedValue({
+      id: "org-1",
+      name: "Old Org",
+      subscriptionStatus: "ACTIVE",
+      stripeSubscriptionId: null,
+    } as any);
+
+    await expect(
+      resolvers.Mutation.deleteOrganization(null, { id: "org-1" }, makeContext("owner-1"))
+    ).rejects.toThrow("You must cancel your subscription before deleting this organization.");
   });
 
   it("throws UNAUTHENTICATED when no user in context", async () => {
