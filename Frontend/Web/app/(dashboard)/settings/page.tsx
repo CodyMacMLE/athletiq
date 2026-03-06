@@ -153,7 +153,7 @@ const PERMISSION_LABELS: { key: keyof Omit<CustomRole, "id" | "name" | "descript
 ];
 
 export default function SettingsPage() {
-  const { selectedOrganizationId, canEdit, canManageOrg } = useAuth();
+  const { selectedOrganizationId, canEdit, canManageOrg, isOwner } = useAuth();
   const [showAddForm, setShowAddForm] = useState(false);
   const [editingSeason, setEditingSeason] = useState<OrgSeason | null>(null);
   const [formName, setFormName] = useState("");
